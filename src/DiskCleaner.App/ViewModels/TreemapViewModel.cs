@@ -2,17 +2,21 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DiskCleaner.Core.Data;
 using DiskCleaner.Core.Formatting;
+using DiskCleaner.Core.Models;
 using DiskCleaner.Core.Services;
 
 namespace DiskCleaner.App.ViewModels;
 
 /// <summary>
 /// Disk Scan / Treemap screen (requirements.txt 3f): visual drive explorer, drill
-/// into folders by clicking, breadcrumb-style "up" navigation. Loading is async -
-/// summing folder sizes recursively (DirectoryUsageService) can take real time
-/// against a full drive root, and blocking the UI thread there froze the whole app
-/// during navigation (caught by the final verification pass).
+/// into folders by clicking, breadcrumb-style "up" navigation. Loading streams in -
+/// DirectoryUsageService reports each subfolder's size as soon as it's known (a
+/// single huge folder like C:\Windows can still take real time even fully
+/// parallelized, so waiting for ALL subfolders before showing anything made a drive
+/// root feel frozen). IsCalculating stays true until every subfolder is done, but
+/// Rects fills in progressively rather than gating on it.
 /// </summary>
 public sealed partial class TreemapViewModel : ObservableObject
 {
@@ -21,11 +25,14 @@ public sealed partial class TreemapViewModel : ObservableObject
 
     private readonly DirectoryUsageService _usage;
     private readonly DriveSpaceService _driveSpace;
+    private readonly SettingsRepository _settings;
+    private readonly List<TreemapNode> _provisionalNodes = new();
 
-    public TreemapViewModel(DirectoryUsageService usage, DriveSpaceService driveSpace)
+    public TreemapViewModel(DirectoryUsageService usage, DriveSpaceService driveSpace, SettingsRepository settings)
     {
         _usage = usage;
         _driveSpace = driveSpace;
+        _settings = settings;
         var firstDrive = driveSpace.GetDrives().FirstOrDefault();
         _currentPath = firstDrive?.Name ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         RefreshDriveSpaceSummary();
@@ -37,8 +44,9 @@ public sealed partial class TreemapViewModel : ObservableObject
     [ObservableProperty]
     private string _currentPath;
 
+    /// <summary>True while any subfolder is still being sized - Rects may already have content.</summary>
     [ObservableProperty]
-    private bool _isLoading;
+    private bool _isCalculating;
 
     [ObservableProperty]
     private string _driveSpaceSummary = string.Empty;
@@ -87,23 +95,52 @@ public sealed partial class TreemapViewModel : ObservableObject
 
     private async Task LoadCurrentPathAsync()
     {
-        IsLoading = true;
+        IsCalculating = true;
         var requestedPath = CurrentPath;
+        var minSizeMb = _settings.GetInt(ScanScopeSettingsKeys.TreemapMinSizeMb, ScanScopeSettingsKeys.DefaultTreemapMinSizeMb);
+        var minSizeBytes = minSizeMb * 1024L * 1024L;
 
-        var nodes = await Task.Run(() => _usage.GetChildNodes(requestedPath));
+        lock (_provisionalNodes)
+        {
+            _provisionalNodes.Clear();
+        }
+
+        Rects.Clear();
+
+        // onSubfolderReady fires from background worker threads (Parallel.ForEach) -
+        // marshal to the UI thread before touching Rects/_provisionalNodes.
+        void OnSubfolderReady(TreemapNode node)
+        {
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                if (requestedPath != CurrentPath)
+                {
+                    return; // stale - user navigated elsewhere while this load was in flight
+                }
+
+                _provisionalNodes.Add(node);
+                RenderNodes(_provisionalNodes);
+            });
+        }
+
+        var nodes = await Task.Run(() => _usage.GetChildNodes(requestedPath, minSizeBytes, OnSubfolderReady));
 
         if (requestedPath != CurrentPath)
         {
-            return; // user navigated elsewhere while this load was in flight - discard stale result
+            return; // discard stale final result too
         }
 
+        RenderNodes(nodes); // authoritative final list (includes file nodes + small-item bucketing)
+        IsCalculating = false;
+    }
+
+    private void RenderNodes(IReadOnlyList<TreemapNode> nodes)
+    {
         var layout = TreemapLayoutEngine.Layout(nodes, LayoutWidth, LayoutHeight);
         Rects.Clear();
         foreach (var rect in layout)
         {
             Rects.Add(new TreemapRectViewModel(rect));
         }
-
-        IsLoading = false;
     }
 }

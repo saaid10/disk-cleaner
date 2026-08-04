@@ -34,7 +34,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private DashboardViewModel Dashboard => _dashboard ??= new DashboardViewModel(_app.DriveSpace, _app.Quarantine, _app.Settings);
 
-    private TreemapViewModel Treemap => _treemap ??= new TreemapViewModel(_app.DirectoryUsage, _app.DriveSpace);
+    private TreemapViewModel Treemap => _treemap ??= new TreemapViewModel(_app.DirectoryUsage, _app.DriveSpace, _app.Settings);
 
     private CleanupSuggestionsViewModel CleanupSuggestions => _cleanupSuggestions ??= new CleanupSuggestionsViewModel(
         _app.JunkScanner, _app.Quarantine, _app.Settings, _app.CleanupHistory);

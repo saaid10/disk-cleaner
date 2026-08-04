@@ -22,4 +22,8 @@ public static class ScanScopeSettingsKeys
 
     public const string LogFileOlderThanDays = "LogFileOlderThanDays";
     public const int DefaultLogFileOlderThanDays = 30;
+
+    /// <summary>Treemap items smaller than this (MB) are bucketed into "Other (small items)" instead of each getting their own rectangle (3f).</summary>
+    public const string TreemapMinSizeMb = "TreemapMinSizeMb";
+    public const int DefaultTreemapMinSizeMb = 5;
 }

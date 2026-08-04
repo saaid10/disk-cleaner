@@ -17,14 +17,15 @@
 
         <DockPanel Grid.Row="2" Margin="0,0,0,10">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <TextBlock Text="Calculating..." VerticalAlignment="Center" Margin="0,0,12,0" Foreground="#888888"
+                           Visibility="{Binding IsCalculating, Converter={StaticResource BoolToVisibilityConverter}}"/>
                 <Button Content="Up" Padding="10,4" Margin="0,0,8,0" Command="{Binding NavigateUpCommand}"/>
                 <Button Content="Refresh" Padding="10,4" Command="{Binding RefreshCommand}"/>
             </StackPanel>
             <TextBlock Text="{Binding CurrentPath}" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
-        <Grid Grid.Row="3">
-        <Border BorderBrush="#CCCCCC" BorderThickness="1">
+        <Border Grid.Row="3" BorderBrush="#CCCCCC" BorderThickness="1">
             <ItemsControl ItemsSource="{Binding Rects}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -53,9 +54,5 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </Border>
-        <TextBlock Text="Loading..." FontSize="14" Foreground="#666666"
-                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                   Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}"/>
-        </Grid>
     </Grid>
 </UserControl>

@@ -46,6 +46,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _largeFileMinSizeMb = _settings.GetInt(ScanScopeSettingsKeys.LargeFileMinSizeMb, ScanScopeSettingsKeys.DefaultLargeFileMinSizeMb);
         _largeFileMinDaysSinceAccess = _settings.GetInt(ScanScopeSettingsKeys.LargeFileMinDaysSinceAccess, ScanScopeSettingsKeys.DefaultLargeFileMinDaysSinceAccess);
         _logFileOlderThanDays = _settings.GetInt(ScanScopeSettingsKeys.LogFileOlderThanDays, ScanScopeSettingsKeys.DefaultLogFileOlderThanDays);
+        _treemapMinSizeMb = _settings.GetInt(ScanScopeSettingsKeys.TreemapMinSizeMb, ScanScopeSettingsKeys.DefaultTreemapMinSizeMb);
     }
 
     public ObservableCollection<WhitelistCategoryOptionViewModel> WhitelistOptions { get; } = new();
@@ -63,6 +64,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private int _logFileOlderThanDays;
+
+    [ObservableProperty]
+    private int _treemapMinSizeMb;
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -94,6 +98,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _settings.SetInt(ScanScopeSettingsKeys.LargeFileMinSizeMb, LargeFileMinSizeMb);
         _settings.SetInt(ScanScopeSettingsKeys.LargeFileMinDaysSinceAccess, LargeFileMinDaysSinceAccess);
         _settings.SetInt(ScanScopeSettingsKeys.LogFileOlderThanDays, LogFileOlderThanDays);
+        _settings.SetInt(ScanScopeSettingsKeys.TreemapMinSizeMb, TreemapMinSizeMb);
         StatusText = "Settings saved.";
     }
 }

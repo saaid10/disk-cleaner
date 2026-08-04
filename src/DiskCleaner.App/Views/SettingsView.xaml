@@ -77,6 +77,15 @@
                 <TextBox Text="{Binding LogFileOlderThanDays}" Width="100"/>
             </StackPanel>
 
+            <TextBlock Text="Disk Scan (Treemap) display" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock Foreground="#666666" TextWrapping="Wrap" Margin="0,0,0,4">
+                Items smaller than this are grouped into a single "Other (small items)" block instead of each getting their own tile.
+            </TextBlock>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <TextBlock Text="Hide items smaller than (MB):" VerticalAlignment="Center" Width="180"/>
+                <TextBox Text="{Binding TreemapMinSizeMb}" Width="100"/>
+            </StackPanel>
+
             <Button Content="Save Settings" Padding="14,6" HorizontalAlignment="Left" Command="{Binding SaveCommand}"/>
             <TextBlock Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
         </StackPanel>
