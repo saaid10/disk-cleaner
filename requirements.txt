@@ -83,6 +83,17 @@ without ever risking files the user actually cares about.
       QuarantineRestoreConflictException) instead of clobbering it.
       Quarantine screen in the app shows active items, per-item countdown,
       restore, and a manual "Purge Expired" action.
+    - Fixed (reported by user): aggregate-location categories (browser
+      cache, Windows temp, Windows Update leftovers - see 3g) used to
+      quarantine the WHOLE folder as one atomic move. Since Windows Temp
+      and browser cache folders almost always have at least one file
+      locked by a running process, that single move failed entirely -
+      user reported "3.18 GB shown, 1 failed (in use or access denied),
+      nothing deleted." Fixed via QuarantineService.QuarantineFolderContents:
+      quarantines the folder's immediate contents item-by-item instead of
+      the folder as a whole, so locked files are skipped individually and
+      everything else still gets quarantined. Verified with a unit test
+      that holds a real file lock open during the call.
 
 3c. Protected folders & Safe Haven (decision - IMPLEMENTED)
     - DECISION MADE: both mechanisms, folder-based exclusion as primary.
@@ -443,3 +454,14 @@ however the user wants to pick it up next.
   + a single bulk "Delete Selected" action - driven by the Downloads
   addition, since one-button-per-row doesn't scale to a folder that can
   hold hundreds of files. 5 new tests (110 total, all passing).
+- Fixed (user-reported, 3b): "Delete Selected" on Windows Temp (3.18 GB)
+  failed entirely with "1 failed (in use or access denied)" and deleted
+  nothing. Root cause: aggregate-location categories quarantined the
+  whole folder as one atomic move, and Temp/cache folders almost always
+  have at least one locked file. Added
+  QuarantineService.QuarantineFolderContents (item-by-item quarantine,
+  partial success expected/fine) and JunkScanResult.IsAggregateLocation
+  so Cleanup Suggestions routes browser cache/Windows temp/Windows
+  Update leftovers through it instead of a single whole-folder move.
+  3 new tests, including one holding a real file lock open during the
+  call (113 total, all passing).

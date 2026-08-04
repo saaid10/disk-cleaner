@@ -103,6 +103,27 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 
         foreach (var row in selected)
         {
+            if (row.Result.IsAggregateLocation)
+            {
+                // Whole-folder categories (browser cache, Windows temp, Windows
+                // Update leftovers): quarantine contents item-by-item so a single
+                // locked file (very common in Temp/cache folders) only skips itself
+                // instead of failing the entire folder.
+                var folderResult = _quarantine.QuarantineFolderContents(row.Path, row.Category);
+                if (folderResult.SucceededCount > 0)
+                {
+                    _history.Add(
+                        DateTime.UtcNow, row.Category, folderResult.SucceededBytes, folderResult.SucceededCount,
+                        "Manual cleanup suggestion (folder contents)");
+                }
+
+                quarantinedCount += folderResult.SucceededCount;
+                quarantinedBytes += folderResult.SucceededBytes;
+                failures += folderResult.FailedCount;
+                Results.Remove(row);
+                continue;
+            }
+
             try
             {
                 _quarantine.Quarantine(row.Path, row.Category);
@@ -123,6 +144,6 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 
         StatusText = failures == 0
             ? $"Quarantined {quarantinedCount} item(s), reclaiming {FileSizeFormatter.Format(quarantinedBytes)}."
-            : $"Quarantined {quarantinedCount} item(s) ({FileSizeFormatter.Format(quarantinedBytes)}); {failures} failed (in use or access denied).";
+            : $"Quarantined {quarantinedCount} item(s) ({FileSizeFormatter.Format(quarantinedBytes)}); {failures} item(s) skipped (in use or access denied).";
     }
 }

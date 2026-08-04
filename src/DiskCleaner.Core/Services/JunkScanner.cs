@@ -35,7 +35,7 @@ public sealed class JunkScanner
             var size = ComputeSize(path);
             if (size > 0)
             {
-                results.Add(new JunkScanResult(path, category, size));
+                results.Add(new JunkScanResult(path, category, size, LastModifiedUtc: null, IsAggregateLocation: true));
             }
         }
 

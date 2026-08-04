@@ -47,6 +47,56 @@ public sealed class QuarantineService
         return new QuarantineItem(id, originalPath, quarantinePath, category, size, now, expiresAt, Restored: false, Purged: false);
     }
 
+    /// <summary>
+    /// Quarantines a folder's immediate contents (files and subfolders) one at a
+    /// time, instead of moving the whole folder as a single atomic operation. A
+    /// folder like Windows Temp or a browser cache almost always has at least one
+    /// file locked by a running process - moving the whole folder in one shot fails
+    /// entirely the moment any single item is locked, even though the rest is
+    /// perfectly safe to quarantine. This skips locked items individually and
+    /// quarantines everything else.
+    /// </summary>
+    public FolderQuarantineResult QuarantineFolderContents(string folderPath, JunkCategory category)
+    {
+        var succeededCount = 0;
+        long succeededBytes = 0;
+        var failedCount = 0;
+
+        IEnumerable<string> entries;
+        try
+        {
+            entries = Directory.EnumerateFileSystemEntries(folderPath);
+        }
+        catch (IOException)
+        {
+            return new FolderQuarantineResult(0, 0, 1);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new FolderQuarantineResult(0, 0, 1);
+        }
+
+        foreach (var entry in entries)
+        {
+            try
+            {
+                var item = Quarantine(entry, category);
+                succeededCount++;
+                succeededBytes += item.SizeBytes;
+            }
+            catch (IOException)
+            {
+                failedCount++; // locked/in-use - skip it, not fatal to the rest
+            }
+            catch (UnauthorizedAccessException)
+            {
+                failedCount++;
+            }
+        }
+
+        return new FolderQuarantineResult(succeededCount, succeededBytes, failedCount);
+    }
+
     public void Restore(long id)
     {
         var item = _repo.GetActive().FirstOrDefault(i => i.Id == id)

@@ -125,6 +125,64 @@ public class QuarantineServiceTests : IDisposable
         Assert.Equal(15, item.SizeBytes);
     }
 
+    [Fact]
+    public void QuarantineFolderContents_MovesEachEntryIndividually()
+    {
+        var dirPath = Path.Combine(_workDir, "aggregate");
+        Directory.CreateDirectory(dirPath);
+        File.WriteAllText(Path.Combine(dirPath, "one.txt"), "12345"); // 5 bytes
+        File.WriteAllText(Path.Combine(dirPath, "two.txt"), "1234567890"); // 10 bytes
+        Directory.CreateDirectory(Path.Combine(dirPath, "subdir"));
+
+        var service = CreateService();
+        var result = service.QuarantineFolderContents(dirPath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(3, result.SucceededCount); // two files + one subfolder, each moved separately
+        Assert.Equal(15, result.SucceededBytes);
+        Assert.Equal(0, result.FailedCount);
+        Assert.False(File.Exists(Path.Combine(dirPath, "one.txt")));
+        Assert.False(File.Exists(Path.Combine(dirPath, "two.txt")));
+        Assert.True(Directory.Exists(dirPath)); // the aggregate folder itself stays - only its contents move
+    }
+
+    [Fact]
+    public void QuarantineFolderContents_LockedFile_SkippedWithoutFailingTheRest()
+    {
+        // Reproduces the real-world bug: Windows Temp / browser cache almost always
+        // has at least one file locked by a running process. A single Directory.Move
+        // of the whole folder would fail entirely; quarantining item-by-item must
+        // skip only the locked one and still succeed on everything else.
+        var dirPath = Path.Combine(_workDir, "aggregate2");
+        Directory.CreateDirectory(dirPath);
+        var lockedPath = Path.Combine(dirPath, "locked.tmp");
+        File.WriteAllText(lockedPath, "in use");
+        File.WriteAllText(Path.Combine(dirPath, "free.tmp"), "1234567890"); // 10 bytes
+
+        using var lockedStream = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var service = CreateService();
+        var result = service.QuarantineFolderContents(dirPath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(1, result.SucceededCount);
+        Assert.Equal(10, result.SucceededBytes);
+        Assert.Equal(1, result.FailedCount);
+        Assert.True(File.Exists(lockedPath)); // still there - was skipped, not lost
+        Assert.False(File.Exists(Path.Combine(dirPath, "free.tmp")));
+    }
+
+    [Fact]
+    public void QuarantineFolderContents_EmptyFolder_ReturnsAllZeros()
+    {
+        var dirPath = Path.Combine(_workDir, "empty");
+        Directory.CreateDirectory(dirPath);
+
+        var service = CreateService();
+        var result = service.QuarantineFolderContents(dirPath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(0, result.SucceededCount);
+        Assert.Equal(0, result.FailedCount);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workDir))
