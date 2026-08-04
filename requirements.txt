@@ -209,7 +209,23 @@ without ever risking files the user actually cares about.
     - Applies to single files, folders/apps (aggregate size of contents),
       and summary totals (e.g. Dashboard "total space reclaimed") alike.
 
-3m. SSD vs HDD handling (decision)
+3m. Drive space overview (decision)
+    - DECISION MADE: Dashboard (and the header of the Disk Scan/Treemap
+      screen) shows, per drive currently in scope (3h - fixed drives plus
+      any opted-in external drives), a used/free breakdown:
+        * Total capacity, space used, space free - each formatted with
+          the shared adaptive size formatter (3l).
+        * A visual proportion bar (used vs. free, two-color, matching the
+          familiar Windows "This PC" drive-bar look) alongside the numbers
+          - not numbers alone.
+    - One card/row per drive when multiple drives are in scope (not a
+      single combined number across drives, since capacity is inherently
+      per-drive).
+    - Refreshes after any cleanup action (manual delete, whitelist
+      auto-clean, quarantine expiry) so free space reflects reality
+      immediately rather than only on next full scan.
+
+3n. SSD vs HDD handling (decision)
     - DECISION MADE: no filesystem/drive-type-specific cleanup logic
       needed - junk/duplicate/large-file cleanup works the same way
       regardless of SSD or HDD. SSD-specific health features (TRIM
@@ -225,7 +241,7 @@ without ever risking files the user actually cares about.
   built-in game-platform preset ships in v1 (3d).
 - Orphaned game-install leftover detection (3g).
 - Network drive scanning (3h).
-- SSD health monitoring / TRIM / SMART data (3m).
+- SSD health monitoring / TRIM / SMART data (3n).
 
 5. OPEN QUESTIONS / NOT YET CLARIFIED
 --------------------------------------
@@ -271,3 +287,6 @@ amendment before moving into data model design and project scaffold.
 - Decided: single shared adaptive file-size formatter used everywhere in
   the app - GB first, falling back to MB, then KB, then bytes, matching
   Windows Explorer-style formatting.
+- Decided: Dashboard and Disk Scan screen show a per-drive used/free
+  breakdown (total, used, free + visual proportion bar), refreshing after
+  any cleanup action.
