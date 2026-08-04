@@ -1,0 +1,252 @@
+SMART DISK CLEANUP APP - REQUIREMENTS
+==========================================
+Doc purpose: running record of requirements gathered during planning discussion.
+Status: IN PROGRESS - core architecture decided, some detail items filled in
+autonomously per user's request ("go through all of it, no need to ask
+permission unless deleting critical files") and flagged for review below.
+
+1. PURPOSE
+----------
+Personal Windows utility to clean up hard drive / SSD clutter intelligently:
+find junk, duplicates, large/old files, and keep the Desktop organized -
+without ever risking files the user actually cares about.
+
+2. PLATFORM / ARCHITECTURE
+---------------------------
+- Frontend: native Windows desktop app, C#/.NET (WPF).
+- Local storage: SQLite (e.g. Microsoft.Data.Sqlite or EF Core), single local
+  DB file. No cloud/remote backend - this is a single-machine, single-user
+  personal tool.
+  - Stores: settings, whitelist categories, thresholds, protected-folder
+    list, Safe Haven path, quarantine metadata (original path, deleted
+    date, 7-day expiry), custom organizer rules, cleanup/scan history for
+    reporting.
+- Background operation: app runs with a system tray icon so scheduled
+  whitelisted auto-clean can run without the main window open.
+- Elevation model: app runs unelevated by default. Only prompts for UAC
+  elevation on-demand when an action specifically needs it (e.g. touching
+  Windows Update leftovers or another user profile's files). Never
+  always-elevated at launch.
+
+3. CORE FEATURES
+-----------------
+
+3a. Smart engine (decision)
+    - DECISION MADE: rule-based heuristics only. No ML, no LLM.
+      Reasoning: personal-use, single-user tool - a learned/trained model
+      is overkill engineering weight for the payoff, and rules are
+      deterministic/explainable ("this is in Temp/ and >30 days old") from
+      day one with no cold-start period.
+    - Considered and rejected: rules + local ML scoring (needs weeks of
+      accept/reject history before it's useful - too much burden for a
+      personal tool); rules + LLM-assisted classification (adds cost/
+      latency/nondeterminism for a tool whose whole point is predictability
+      around deletion).
+
+3b. Delete safety & quarantine (decision)
+    - DECISION MADE: hybrid model, per category:
+        * Whitelisted categories (user explicitly opts a category in) can
+          be auto-cleaned on a schedule without asking each time.
+        * Everything else always requires manual review/confirm before
+          being touched.
+    - DECISION MADE: nothing whitelisted is ever hard-deleted immediately.
+      Auto-cleaned files move to a recoverable quarantine/undo folder and
+      are only permanently deleted after 7 days. Restorable at any point
+      during that window.
+    - Windows Update leftovers (Windows.old, SoftwareDistribution\Download)
+      are NEVER whitelist-eligible even though they're "junk" - deleting
+      them is semi-irreversible (blocks OS rollback) and needs elevation,
+      so they always require manual confirm regardless of settings.
+
+3c. Protected folders & Safe Haven (decision)
+    - DECISION MADE: both mechanisms, folder-based exclusion as primary.
+        * Folder-based exclusion: user marks any existing folder as
+          protected via settings. Recursive by default - protecting a
+          folder protects everything under it automatically.
+        * Safe Haven folder: one dedicated folder where anything placed
+          inside is automatically off-limits, no marking needed - a quick
+          catch-all for loose files that don't belong to an already-
+          protected folder.
+    - Protected/Safe Haven content is excluded from scanning entirely (not
+      just from deletion), so it never appears in suggestions either.
+
+3d. Desktop Organizer (decision)
+    - DECISION MADE: on-demand trigger only (button), not a continuous
+      background watcher. Reasoning: auto-sorting the instant a file lands
+      is annoying in practice - files often need to sit loose temporarily
+      (mid-download, about to be attached to an email). Optional smart
+      nudge/notification when loose desktop file count crosses a threshold
+      (e.g. "you have 40 loose files, want to tidy up?").
+    - DECISION MADE: two-layer sorting logic.
+        * Base layer: type-based mapping by extension (.pdf/.docx/.xlsx ->
+          Documents, .png/.jpg/.gif -> Images, .zip/.rar -> Archives,
+          everything unmatched -> generic Programs/Other bucket).
+        * Override layer (built-in preset, ships day one): game-platform
+          detection for .exe/.lnk before falling back to the generic exe
+          bucket.
+            - Shortcuts (.lnk): resolve the shortcut's target path: if it
+              points into a Steam/Epic Games/GOG Games/Battle.net/Origin
+              install directory, move to a "Games" folder instead of the
+              generic bucket.
+            - Installer filenames: keyword match on common installer names
+              (SteamSetup.exe, EpicGamesLauncherInstaller.exe,
+              GOG_Galaxy...exe, etc.).
+        * Date-based sorting and fully custom user-defined keyword/path
+          rules are a future layer, not required for v1 (type-based +
+          game-platform preset already covers the main pain point).
+    - DECISION MADE: existing subfolders already on the Desktop are left
+      alone by default (treated as intentional structure, not touched) -
+      only loose files sitting directly on the Desktop are sorted.
+    - DECISION MADE: reversible via a simple "Undo last organize" (reverts
+      the most recent batch move). Full quarantine/7-day retention is not
+      needed here since nothing is destroyed, only moved.
+
+3e. Duplicate file finder (filled in - flagged for review)
+    - Content-hash based (not filename/size alone), to guarantee accuracy.
+      Two-stage for performance: group files by size first (cheap), then
+      hash only files that share a size with at least one other file
+      (avoids hashing every file on the drive).
+    - On-demand scan only (not background/scheduled) - hashing is CPU/IO
+      heavy. User selects which folder(s)/drive(s) to include per scan.
+    - Always manual-review tier (not whitelist-eligible) - which copy to
+      keep is a judgment call, not a universally safe default. Duplicates
+      the user chooses to remove go through the same quarantine flow as
+      other manual deletions.
+    - Protected folders / Safe Haven contents are excluded from duplicate
+      scans (per 3c).
+
+3f. Large & old file finder + visual disk map (filled in - flagged for review)
+    - Sortable list view: file size, last-accessed date, path. Default
+      filter suggestion: files >100MB not accessed in 90+ days (both
+      thresholds user-configurable in Settings, not hardcoded).
+    - Visual disk map: treemap-style view of drive/folder structure
+      (WinDirStat/TreeSize-style), click to drill into a folder. Built as
+      a custom lightweight WPF control (rectangles sized proportionally to
+      file/folder size) rather than pulling in a heavy third-party charting
+      dependency.
+    - Treemap color-coding reuses the same file-type categories as the
+      Desktop Organizer's type buckets (Documents/Images/Archives/etc.) for
+      a consistent visual language across the app.
+    - Always manual-review tier - never auto-deleted, only surfaced as
+      suggestions.
+
+3g. Category-aware junk scanning (filled in - flagged for review)
+    - In-scope categories for v1:
+        * Browser cache (Chrome/Edge/Firefox known cache paths)
+        * Windows temp folders (%TEMP%, C:\Windows\Temp)
+        * Recycle Bin (report current size; "Empty Recycle Bin" offered as
+          a direct action - not routed through the app's own quarantine
+          since the Recycle Bin already IS a quarantine)
+        * Dev build/dependency folders (node_modules, obj, bin, dist,
+          .next, target, etc.) - regenerable via reinstall/rebuild
+        * Log files (*.log older than a configurable age, in common
+          locations)
+        * Windows Update leftovers (Windows.old, SoftwareDistribution) -
+          see 3b, always manual + elevation required
+    - Deferred / out of scope for v1: orphaned game-install leftovers
+      (workshop temp files, old patch caches, etc.) - reliable detection
+      needs per-launcher knowledge/APIs that aren't worth building for a
+      personal tool right now. Revisit later if it becomes a real pain
+      point.
+    - Whitelist-eligible (safe, easily regenerated, can go in the
+      auto-clean tier if the user opts in): browser cache, Windows temp,
+      dev build/dependency folders, log files.
+    - Always manual-review tier: Windows Update leftovers, and by extension
+      duplicates and large/old files (3e, 3f) since those are judgment
+      calls, not universally-safe categories.
+
+3h. Scan scope (filled in - flagged for review)
+    - All local fixed drives (C:, D:, etc.) supported; user selects which
+      drives/folders are included in a given scan.
+    - External/removable drives: included when attached, but excluded by
+      default until the user explicitly opts a device in (avoids
+      accidentally scanning a plugged-in USB backup drive).
+    - Network drives: out of scope for v1 (adds latency/permissions
+      complexity not worth it for a personal local-cleanup tool).
+
+3i. Scheduling (filled in - flagged for review)
+    - Whitelisted categories (3b/3g) can run on a user-configured schedule
+      (e.g. weekly) via the system tray background process. Interval is a
+      Settings value, not hardcoded.
+    - All other scan types (duplicates, large/old files) are on-demand
+      only, triggered manually - not scheduled, since they're
+      review-required anyway.
+
+3j. Before/after reporting (filled in - flagged for review)
+    - After any cleanup action (manual or auto), show a summary: total
+      space reclaimed, breakdown by category, list of what was moved to
+      quarantine (with the 7-day countdown visible).
+
+3k. Main screens / navigation (filled in - flagged for review)
+    - DECISION MADE (draft):
+        * Dashboard - total space overview, quick actions, quarantine
+          countdown status
+        * Disk Scan / Treemap - visual drive explorer (3f)
+        * Cleanup Suggestions - categorized review queue (junk categories,
+          large/old files, duplicates), accept/reject per item
+        * Quarantine - items pending permanent deletion, restore option,
+          countdown per item
+        * Desktop Organizer - on-demand organize, undo last, rule presets
+        * Protected Folders / Safe Haven - manage exclusions
+        * Settings - whitelist categories, thresholds, scan schedule,
+          organizer rules
+
+3l. SSD vs HDD handling (decision)
+    - DECISION MADE: no filesystem/drive-type-specific cleanup logic
+      needed - junk/duplicate/large-file cleanup works the same way
+      regardless of SSD or HDD. SSD-specific health features (TRIM
+      triggering, SMART/wear-level monitoring) are a different problem
+      domain (disk health, not disk cleaning) and are OUT OF SCOPE unless
+      requested later.
+
+4. OUT OF SCOPE / DEFERRED
+----------------------------
+- ML-based or LLM-assisted file classification (3a).
+- Continuous/real-time background Desktop watching (3d) - on-demand only.
+- Fully custom user-authored rule builder UI for the organizer - only the
+  built-in game-platform preset ships in v1 (3d).
+- Orphaned game-install leftover detection (3g).
+- Network drive scanning (3h).
+- SSD health monitoring / TRIM / SMART data (3l).
+
+5. OPEN QUESTIONS / NOT YET CLARIFIED
+--------------------------------------
+- Items in sections 3e-3k were filled in with reasonable defaults per the
+  user's instruction to proceed without asking permission for each one -
+  not yet explicitly confirmed by the user. Flagged for review/amendment.
+- Exact default thresholds (large-file size cutoff, "old" age cutoffs per
+  category, loose-desktop-file nudge count) are drafted as sensible
+  defaults but not yet confirmed.
+
+6. STATUS
+----------
+Core architecture and safety model fully decided through discussion.
+Feature-detail sections filled in autonomously and awaiting user review/
+amendment before moving into data model design and project scaffold.
+
+7. CHANGE LOG
+--------------
+- Initial brainstorm: duplicate finder, large/old file finder, junk
+  categories, visual disk map, undo/quarantine, scheduled scans, ignore
+  list, before/after report.
+- Decided: platform is Windows desktop, C#/.NET (WPF).
+- Decided: smart engine is rule-based heuristics only - ML and LLM options
+  discussed and rejected as overkill for a personal-use tool.
+- Decided: delete safety is a hybrid model - whitelisted categories can
+  auto-clean on schedule but always land in a 7-day recoverable quarantine
+  first; everything else always requires manual confirm.
+- Decided: Windows Update leftovers are never whitelist-eligible regardless
+  of settings, due to semi-irreversibility and elevation requirements.
+- Decided: protection uses both folder-based exclusion (primary, recursive)
+  and a dedicated Safe Haven folder as a loose-file catch-all; both are
+  excluded from scanning entirely, not just from deletion.
+- Added: Desktop Organizer as a side feature. Decided on-demand trigger
+  (not continuous watching), two-layer sorting (type-based base +
+  game-platform detection override via shortcut-target resolution and
+  installer filename matching), existing subfolders left alone, simple
+  undo-last-organize.
+- Filled in (pending user review): duplicate finder mechanics, large/old
+  file finder + treemap visualization, category-aware junk scanning scope
+  and whitelist eligibility per category, scan scope (drives), local
+  SQLite storage, scheduling model, before/after reporting, draft screen
+  list, SSD-vs-HDD scope decision.
