@@ -24,7 +24,7 @@ without ever risking files the user actually cares about.
       unit-testable.
     * DiskCleaner.App - WPF shell, ViewModels, Views, tray icon, Windows-
       specific interop (shortcut resolution, folder picker).
-    * DiskCleaner.Core.Tests - xUnit test project. 105 tests, all passing.
+    * DiskCleaner.Core.Tests - xUnit test project. 121 tests, all passing.
 - Local storage: SQLite via Microsoft.Data.Sqlite (raw ADO.NET, not EF
   Core - kept lightweight for a single-table-per-concept personal DB), one
   local DB file at %LocalAppData%\DiskCleaner\diskcleaner.db.
@@ -36,14 +36,16 @@ without ever risking files the user actually cares about.
   UseWindowsForms) so scheduled whitelisted auto-clean can run without the
   main window open. Closing the window hides to tray instead of exiting;
   tray "Exit" is the real quit path.
-- Elevation model (DESIGNED, NOT YET IMPLEMENTED): intent is to run
-  unelevated by default and only prompt for UAC when an action specific-
-  ally needs it (e.g. touching Windows Update leftovers). As built today,
-  there is no UAC prompt - scanning locations that need admin rights
-  (Windows.old, SoftwareDistribution) simply skips files it can't access
-  (UnauthorizedAccessException is caught and swallowed by the scanner) and
-  the Cleanup Suggestions list will just show whatever it *could* read
-  without elevation. Flagged as a known gap in section 5.
+- Elevation model (IMPLEMENTED): runs unelevated by default. When
+  quarantining Windows Update leftovers fails with access-denied, offers
+  a "Retry as Administrator?" prompt; accepting relaunches the app exe in
+  a headless mode (--elevated-move-folder) via a UAC prompt to perform
+  ONLY the raw file moves, then exits - the main process stays unelevated
+  and owns all database bookkeeping (ElevatedMoveHelper,
+  QuarantineService.RecordExternallyMovedItem). Note: a real UAC prompt
+  runs on Windows' secure desktop, isolated from automation by design -
+  the plumbing is built and unit-tested but the actual click-through-a-
+  UAC-prompt path needs a manual end-to-end check by the user.
 
 3. CORE FEATURES
 -----------------
@@ -94,6 +96,21 @@ without ever risking files the user actually cares about.
       the folder as a whole, so locked files are skipped individually and
       everything else still gets quarantined. Verified with a unit test
       that holds a real file lock open during the call.
+    - Fixed: bulk quarantine actions (Cleanup Suggestions "Delete
+      Selected") now run off the UI thread (Task.Run) - proactively
+      fixing the same freeze-on-synchronous-I/O bug class caught earlier
+      in Cleanup Suggestions/Treemap loading, since quarantining hundreds
+      of individual files via QuarantineFolderContents on the UI thread
+      would have frozen the window the same way.
+    - Added: confirmation dialog before bulk delete ("Quarantine N
+      item(s), reclaiming up to X? Reversible for 7 days.") - scoped to
+      the bulk "Delete Selected" action only, not per-item Duplicates/
+      Large&Old Files clicks, since a modal per single-file click would
+      just be friction for low-blast-radius actions.
+    - QuarantineService fires a Changed event (once per logical action,
+      not once per file during bulk folder quarantine) that Dashboard and
+      Quarantine screens subscribe to for auto-refresh, instead of
+      requiring a manual Refresh click after cleanup elsewhere.
 
 3c. Protected folders & Safe Haven (decision - IMPLEMENTED)
     - DECISION MADE: both mechanisms, folder-based exclusion as primary.
@@ -184,11 +201,11 @@ without ever risking files the user actually cares about.
       subfolder nodes, for a consistent visual language across the app.
     - Always manual-review tier - never auto-deleted, only surfaced as
       suggestions.
-    - Gap: the Disk Scan/Treemap screen does NOT currently show the per-
-      drive used/free breakdown from 3m in its header - that only appears
-      on the Dashboard. See section 5.
+    - Fixed: the Disk Scan/Treemap screen header now shows the current
+      drive's per-drive used/free breakdown from 3m (previously
+      Dashboard-only).
 
-3g. Category-aware junk scanning (decision - IMPLEMENTED, one item deferred)
+3g. Category-aware junk scanning (decision - IMPLEMENTED)
     - In-scope categories, BUILT:
         * Browser cache (Chrome/Edge known cache paths; Firefox profile
           cache2 folders auto-discovered)
@@ -199,12 +216,16 @@ without ever risking files the user actually cares about.
         * Log files (*.log older than a configurable age, within the
           user's configured Scan Roots)
         * Windows Update leftovers (Windows.old, SoftwareDistribution\
-          Download) - see 3b, always manual + would need elevation
-          (elevation prompting itself not yet built, see section 2)
-    - NOT BUILT: Recycle Bin size reporting / "Empty Recycle Bin" direct
-      action. Was planned as a whitelist-eligible, quarantine-bypassing
-      action (since the Recycle Bin already IS a quarantine) but no code
-      exists for it yet. See section 5.
+          Download) - see 3b, always manual; elevation retry available
+          via UAC prompt if access is denied (see section 2)
+        * Downloads folder (3o)
+    - Built: Recycle Bin size reporting + "Empty Recycle Bin" direct
+      action (RecycleBinService, SHQueryRecycleBin/SHEmptyRecycleBin
+      P/Invoke). Not routed through QuarantineService - the Recycle Bin
+      already IS a quarantine, so this is a direct action with its own
+      confirmation dialog that explicitly notes it is NOT recoverable via
+      the app (unlike everything else on the Cleanup Suggestions screen).
+      Surfaced as a summary card on the Cleanup Suggestions screen.
     - Deferred / out of scope for v1 (unchanged): orphaned game-install
       leftovers (workshop temp files, old patch caches, etc.) - reliable
       detection needs per-launcher knowledge/APIs not worth building for
@@ -216,17 +237,17 @@ without ever risking files the user actually cares about.
       (3o) - never auto-clean-eligible even if somehow present in a
       whitelist setting.
 
-3h. Scan scope (decision - PARTIALLY IMPLEMENTED)
+3h. Scan scope (decision - IMPLEMENTED)
     - All local fixed drives (C:, D:, etc.) supported for the Dashboard's
       drive overview - always shown, no opt-in needed.
     - Dev-build/log/duplicate/large-old-file scans are scoped to user-
       selected "Scan Roots" (Settings screen: add/remove folders via a
       native folder-browse dialog) rather than the whole drive by default.
-    - External/removable drives: the underlying service
-      (DriveSpaceService.GetDrives) supports an opt-in list of removable
-      drive names, excluded unless explicitly passed in - but no Settings
-      UI exists yet to manage that opt-in list, so in practice removable
-      drives are always excluded from the Dashboard today. See section 5.
+    - External/removable drives: excluded from the Dashboard by default;
+      Settings now lists currently-attached removable drives
+      (DriveSpaceService.GetAvailableRemovableDrives) as opt-in checkboxes
+      so the user can explicitly include a specific USB/external drive
+      without needing to know its drive letter in advance.
     - Network drives: out of scope for v1 (unchanged).
 
 3i. Scheduling (decision - IMPLEMENTED)
@@ -240,18 +261,18 @@ without ever risking files the user actually cares about.
       (%LocalAppData%\DiskCleaner\app.log) instead of silently swallowed
       or crashing the app.
 
-3j. Before/after reporting (decision - CORE LOGIC BUILT, NOT SURFACED IN UI)
-    - CleanupReportBuilder exists and is unit-tested: aggregates total
-      bytes reclaimed + per-category breakdown, either from a just-
-      completed action's quarantined items or from historical
-      CleanupHistory rows.
-    - Gap: no screen or dialog in the app actually displays a
-      CleanupReport yet. Today, Cleanup Suggestions/Duplicates/Large&Old
-      Files show a one-line status message per item quarantined ("Quaran-
-      tined X (size)"), not an aggregate before/after summary. The
-      Quarantine screen shows live active items with countdowns, which
-      covers "what's pending deletion" but not "what a completed action
-      just accomplished." See section 5.
+3j. Before/after reporting (decision - IMPLEMENTED)
+    - CleanupReportBuilder aggregates total bytes reclaimed + per-category
+      breakdown, either from a just-completed action's quarantined items
+      or from historical CleanupHistory rows.
+    - Built: CleanupReportWindow shows this after Cleanup Suggestions'
+      "Delete Selected" completes (and after an elevated-retry pass for
+      Windows Update leftovers) - total reclaimed, per-category
+      breakdown, and the full list of quarantined items. Duplicates and
+      Large&Old Files still show a one-line status per item (no modal for
+      single-item clicks - would be excessive friction there); the
+      Quarantine screen separately covers "what's pending deletion" with
+      live countdowns.
 
 3k. Main screens / navigation (decision - IMPLEMENTED, structure changed
     from original draft)
@@ -301,15 +322,16 @@ without ever risking files the user actually cares about.
       totals alike - used in Dashboard, Cleanup Suggestions, Duplicates,
       Large/Old Files, Treemap, Quarantine, Desktop Organizer status text.
 
-3m. Drive space overview (decision - IMPLEMENTED on Dashboard only)
-    - DECISION MADE: Dashboard shows, per fixed drive, a used/free
-      breakdown: total capacity, space used, space free (via the shared
-      size formatter, 3l) plus a visual two-color proportion bar.
-    - One card per drive. Manual "Refresh" button (not yet auto-refreshing
-      after cleanup actions on other screens - see section 5).
-    - Gap: the Disk Scan/Treemap screen header does NOT show this
-      breakdown as originally planned - only the current folder path and
-      Up/Refresh buttons. See 3f and section 5.
+3m. Drive space overview (decision - IMPLEMENTED)
+    - DECISION MADE: Dashboard shows, per fixed drive (plus any opted-in
+      removable drive, 3h), a used/free breakdown: total capacity, space
+      used, space free (via the shared size formatter, 3l) plus a visual
+      two-color proportion bar.
+    - One card per drive. Auto-refreshes on QuarantineService.Changed (any
+      cleanup action anywhere in the app) in addition to the manual
+      "Refresh" button.
+    - Disk Scan/Treemap header now shows the same breakdown for whichever
+      drive the current folder is on (3f).
 
 3n. SSD vs HDD handling (decision - unchanged, correctly out of scope)
     - DECISION MADE: no filesystem/drive-type-specific cleanup logic
@@ -354,38 +376,38 @@ without ever risking files the user actually cares about.
 
 5. KNOWN GAPS (in scope, designed, not yet fully implemented)
 ------------------------------------------------------------------
-- UAC elevation prompting is not implemented (2). Windows Update leftover
-  scanning silently skips files it can't access instead of prompting.
-- Recycle Bin size reporting + "Empty Recycle Bin" action is not built
-  (3g). Was planned as part of the junk-category list.
-- Removable/external drive opt-in has no Settings UI (3h). The service
-  layer supports it; nothing in the app currently lets a user enable it.
-- Before/after cleanup report is not surfaced anywhere in the UI (3j).
-  CleanupReportBuilder is implemented and unit-tested but unused by any
-  screen - quarantine actions (including the new bulk "Delete Selected"
-  in Cleanup Suggestions) only show a one-line status message with a
-  total, not the structured per-category CleanupReport breakdown.
-- Disk Scan/Treemap screen doesn't show the drive used/free breakdown
-  from 3m in its header (3f, 3m) - only the Dashboard does.
-- Dashboard's drive overview doesn't auto-refresh after a cleanup action
-  on another screen (3m) - requires a manual "Refresh" click.
+Resolved in the latest round (previously listed here, now IMPLEMENTED -
+see the relevant 3x section for detail): UAC elevation prompting,
+Recycle Bin action, removable-drive opt-in UI, before/after report UI,
+Disk Scan/Treemap header drive stats, Dashboard auto-refresh.
+
+Still open:
 - Loose-desktop-file-count "nudge" notification (mentioned in early
   Desktop Organizer discussion) was not built (3d).
 - Date-based sorting and custom keyword/path rules for the Desktop
   Organizer are not built (3d) - type-based + game-platform preset only.
+- UAC elevation retry (3b/2) is implemented and unit-tested at the
+  plumbing level, but the actual "click through a real UAC prompt"
+  path could not be exercised by automated testing (a UAC prompt runs
+  on Windows' secure desktop by design) - worth a manual end-to-end
+  check the next time Windows Update leftovers actually need it.
 
 6. STATUS
 ----------
-V1 is built, unit-tested (105 Core tests passing), and verified by
-actually running the app: launched the WPF shell, drove every nav item
-via UI Automation, and visually confirmed each of the 9 screens renders
-correctly. Two real bugs were found and fixed during that verification
-pass (Cleanup Suggestions and Treemap were both scanning synchronously on
-their view-model constructors, freezing the UI on first navigation) -
-both are now async/on-demand and re-verified working. All work is
-committed and pushed to the GitHub repository listed at the top of this
-document. Remaining work is the known-gaps list in section 5, prioritized
-however the user wants to pick it up next.
+V1 is built, unit-tested (121 Core tests passing), and verified by
+actually running the app end-to-end multiple times. Beyond the original
+9-screen build, a follow-up round added Downloads scanning, checkbox
+multi-select cleanup, and fixed a real user-reported bug (Windows Temp
+quarantine failing entirely over one locked file); a further round closed
+out most of the "known gaps" list - UAC elevation retry, Recycle Bin
+action, removable-drive opt-in, before/after report UI, Treemap header
+drive stats, and auto-refresh are all now implemented. Two real UI-freeze
+bugs were found and fixed along the way (Cleanup Suggestions/Treemap
+scanning synchronously on the UI thread; later, bulk quarantine doing the
+same). All work is committed and pushed to the GitHub repository listed
+at the top of this document. Remaining work is the short list in
+section 5 - a nudge notification and custom organizer rules, both minor -
+plus a manual end-to-end check of the UAC elevation prompt.
 
 7. CHANGE LOG
 --------------
@@ -465,3 +487,27 @@ however the user wants to pick it up next.
   Update leftovers through it instead of a single whole-folder move.
   3 new tests, including one holding a real file lock open during the
   call (113 total, all passing).
+- Fixed proactively: bulk quarantine now runs off the UI thread
+  (Task.Run), avoiding a repeat of the same freeze-class bug for large
+  Windows Temp cleanups; added a confirmation dialog before bulk delete.
+- Added: CleanupReportWindow surfaces CleanupReportBuilder's output
+  (previously built but unused) after Delete Selected completes.
+- Added: QuarantineService.Changed event so Dashboard/Quarantine
+  auto-refresh after any cleanup action anywhere in the app.
+- Added: UAC elevation retry for Windows Update leftovers
+  (ElevatedMoveHelper, headless --elevated-move-folder exe mode,
+  QuarantineService.RecordExternallyMovedItem) - offered automatically
+  when access-denied failures occur.
+- Added: Recycle Bin size reporting + direct "Empty Recycle Bin" action
+  (RecycleBinService, shell32 P/Invoke) on the Cleanup Suggestions
+  screen - not routed through quarantine, since the Recycle Bin already
+  is one.
+- Added: removable-drive opt-in checkboxes in Settings
+  (DriveSpaceService.GetAvailableRemovableDrives) - the service layer
+  already supported this but had no UI to manage it.
+- Added: Disk Scan/Treemap header now shows the current drive's
+  used/free/total, matching the Dashboard's drive cards.
+- 8 new tests across this round (121 total, all passing). Verified live
+  via UI Automation across all 9 screens; Recycle Bin card confirmed
+  against the real (empty) Recycle Bin without triggering the
+  irreversible Empty action.
