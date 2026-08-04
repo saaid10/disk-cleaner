@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DiskCleaner.Core.Formatting;
 using DiskCleaner.Core.Services;
 
 namespace DiskCleaner.App.ViewModels;
@@ -19,12 +20,15 @@ public sealed partial class TreemapViewModel : ObservableObject
     private const double LayoutHeight = 460;
 
     private readonly DirectoryUsageService _usage;
+    private readonly DriveSpaceService _driveSpace;
 
     public TreemapViewModel(DirectoryUsageService usage, DriveSpaceService driveSpace)
     {
         _usage = usage;
+        _driveSpace = driveSpace;
         var firstDrive = driveSpace.GetDrives().FirstOrDefault();
         _currentPath = firstDrive?.Name ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        RefreshDriveSpaceSummary();
         _ = LoadCurrentPathAsync();
     }
 
@@ -35,6 +39,23 @@ public sealed partial class TreemapViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isLoading;
+
+    [ObservableProperty]
+    private string _driveSpaceSummary = string.Empty;
+
+    partial void OnCurrentPathChanged(string value) => RefreshDriveSpaceSummary();
+
+    private void RefreshDriveSpaceSummary()
+    {
+        var root = Path.GetPathRoot(CurrentPath);
+        var drive = string.IsNullOrEmpty(root)
+            ? null
+            : _driveSpace.GetDrives().FirstOrDefault(d => string.Equals(d.Name, root, StringComparison.OrdinalIgnoreCase));
+
+        DriveSpaceSummary = drive is null
+            ? string.Empty
+            : $"{drive.VolumeLabel} - Used: {FileSizeFormatter.Format(drive.UsedBytes)} | Free: {FileSizeFormatter.Format(drive.FreeBytes)} | Total: {FileSizeFormatter.Format(drive.TotalBytes)}";
+    }
 
     [RelayCommand]
     private Task Refresh() => LoadCurrentPathAsync();

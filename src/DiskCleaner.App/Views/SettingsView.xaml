@@ -40,6 +40,27 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <TextBlock Text="Removable drives" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock Foreground="#666666" TextWrapping="Wrap" Margin="0,0,0,8">
+                Excluded from the Dashboard by default to avoid accidentally scanning a plugged-in USB backup drive. Check to include.
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding RemovableDriveOptions}" Margin="0,0,0,16">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox Content="{Binding DisplayLabel}" IsChecked="{Binding IsEnabled}" Margin="0,2"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+                <ItemsControl.Style>
+                    <Style TargetType="ItemsControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding RemovableDriveOptions.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Style>
+            </ItemsControl>
+
             <TextBlock Text="Large/old file thresholds" FontWeight="SemiBold" Margin="0,0,0,4"/>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                 <TextBlock Text="Minimum size (MB):" VerticalAlignment="Center" Width="180"/>

@@ -32,7 +32,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     private object? _currentView;
 
-    private DashboardViewModel Dashboard => _dashboard ??= new DashboardViewModel(_app.DriveSpace, _app.Quarantine);
+    private DashboardViewModel Dashboard => _dashboard ??= new DashboardViewModel(_app.DriveSpace, _app.Quarantine, _app.Settings);
 
     private TreemapViewModel Treemap => _treemap ??= new TreemapViewModel(_app.DirectoryUsage, _app.DriveSpace);
 
@@ -52,7 +52,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private ProtectedFoldersViewModel ProtectedFolders => _protectedFolders ??= new ProtectedFoldersViewModel(
         _app.ProtectedFolders, _app.Settings, _browseForFolder);
 
-    private SettingsViewModel Settings => _settings ??= new SettingsViewModel(_app.Settings, _browseForFolder);
+    private SettingsViewModel Settings => _settings ??= new SettingsViewModel(_app.Settings, _browseForFolder, _app.DriveSpace);
 
     [RelayCommand]
     private void ShowDashboard() => CurrentView = Dashboard;

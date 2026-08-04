@@ -17,7 +17,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly SettingsRepository _settings;
     private readonly Func<string?> _browseForFolder;
 
-    public SettingsViewModel(SettingsRepository settings, Func<string?> browseForFolder)
+    public SettingsViewModel(SettingsRepository settings, Func<string?> browseForFolder, DriveSpaceService driveSpace)
     {
         _settings = settings;
         _browseForFolder = browseForFolder;
@@ -36,6 +36,12 @@ public sealed partial class SettingsViewModel : ObservableObject
             ScanRoots.Add(root);
         }
 
+        var optedInRemovable = _settings.GetStringSet(ScanScopeSettingsKeys.OptedInRemovableDrives);
+        foreach (var drive in driveSpace.GetAvailableRemovableDrives())
+        {
+            RemovableDriveOptions.Add(new RemovableDriveOptionViewModel(drive, optedInRemovable.Contains(drive.Name)));
+        }
+
         _autoCleanIntervalDays = _settings.GetInt(AutoCleanRunner.AutoCleanIntervalDaysSettingKey, AutoCleanRunner.DefaultIntervalDays);
         _largeFileMinSizeMb = _settings.GetInt(ScanScopeSettingsKeys.LargeFileMinSizeMb, ScanScopeSettingsKeys.DefaultLargeFileMinSizeMb);
         _largeFileMinDaysSinceAccess = _settings.GetInt(ScanScopeSettingsKeys.LargeFileMinDaysSinceAccess, ScanScopeSettingsKeys.DefaultLargeFileMinDaysSinceAccess);
@@ -44,6 +50,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public ObservableCollection<WhitelistCategoryOptionViewModel> WhitelistOptions { get; } = new();
     public ObservableCollection<string> ScanRoots { get; } = new();
+    public ObservableCollection<RemovableDriveOptionViewModel> RemovableDriveOptions { get; } = new();
 
     [ObservableProperty]
     private int _autoCleanIntervalDays;
@@ -80,6 +87,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             AutoCleanRunner.WhitelistCategoriesSettingKey,
             WhitelistOptions.Where(o => o.IsEnabled).Select(o => o.Category.ToString()));
         _settings.SetStringSet(ScanScopeSettingsKeys.ScanRoots, ScanRoots);
+        _settings.SetStringSet(
+            ScanScopeSettingsKeys.OptedInRemovableDrives,
+            RemovableDriveOptions.Where(o => o.IsEnabled).Select(o => o.Name));
         _settings.SetInt(AutoCleanRunner.AutoCleanIntervalDaysSettingKey, AutoCleanIntervalDays);
         _settings.SetInt(ScanScopeSettingsKeys.LargeFileMinSizeMb, LargeFileMinSizeMb);
         _settings.SetInt(ScanScopeSettingsKeys.LargeFileMinDaysSinceAccess, LargeFileMinDaysSinceAccess);

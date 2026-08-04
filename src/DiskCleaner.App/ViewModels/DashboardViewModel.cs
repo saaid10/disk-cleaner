@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DiskCleaner.Core.Data;
 using DiskCleaner.Core.Services;
 
 namespace DiskCleaner.App.ViewModels;
@@ -15,11 +16,13 @@ public sealed partial class DashboardViewModel : ObservableObject
 {
     private readonly DriveSpaceService _driveSpaceService;
     private readonly QuarantineService _quarantine;
+    private readonly SettingsRepository _settings;
 
-    public DashboardViewModel(DriveSpaceService driveSpaceService, QuarantineService quarantine)
+    public DashboardViewModel(DriveSpaceService driveSpaceService, QuarantineService quarantine, SettingsRepository settings)
     {
         _driveSpaceService = driveSpaceService;
         _quarantine = quarantine;
+        _settings = settings;
         _quarantine.Changed += OnQuarantineChanged;
         Refresh();
     }
@@ -34,8 +37,9 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
+        var optedInRemovable = _settings.GetStringSet(ScanScopeSettingsKeys.OptedInRemovableDrives);
         Drives.Clear();
-        foreach (var drive in _driveSpaceService.GetDrives())
+        foreach (var drive in _driveSpaceService.GetDrives(optedInRemovable))
         {
             Drives.Add(new DriveCardViewModel(drive));
         }

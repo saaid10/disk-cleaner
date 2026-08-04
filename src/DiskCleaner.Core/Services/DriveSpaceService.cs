@@ -25,6 +25,19 @@ public sealed class DriveSpaceService
             .ToList();
     }
 
+    /// <summary>
+    /// Removable drives currently attached (requirements.txt 3h) - lets the Settings
+    /// screen offer them as opt-in checkboxes rather than requiring the user to know
+    /// a drive letter to type in.
+    /// </summary>
+    public IReadOnlyList<DriveSpaceInfo> GetAvailableRemovableDrives()
+    {
+        return DriveInfo.GetDrives()
+            .Where(d => d.IsReady && d.DriveType == DriveType.Removable)
+            .Select(d => new DriveSpaceInfo(d.Name, SafeVolumeLabel(d), d.TotalSize, d.TotalFreeSpace))
+            .ToList();
+    }
+
     private static string SafeVolumeLabel(DriveInfo drive)
     {
         try
