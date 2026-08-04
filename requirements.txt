@@ -201,8 +201,9 @@ without ever risking files the user actually cares about.
     - Whitelist-eligible (enforced by WhitelistPolicy in code): browser
       cache, Windows temp, dev build/dependency folders, log files.
     - Always manual-review tier (enforced by WhitelistPolicy in code):
-      Windows Update leftovers, duplicates, large/old files - never
-      auto-clean-eligible even if somehow present in a whitelist setting.
+      Windows Update leftovers, duplicates, large/old files, Downloads
+      (3o) - never auto-clean-eligible even if somehow present in a
+      whitelist setting.
 
 3h. Scan scope (decision - PARTIALLY IMPLEMENTED)
     - All local fixed drives (C:, D:, etc.) supported for the Dashboard's
@@ -247,8 +248,10 @@ without ever risking files the user actually cares about.
       created and cached per screen so switching tabs doesn't re-scan:
         * Dashboard - per-drive used/free overview (3m), manual refresh
         * Disk Scan - treemap drill-down (3f)
-        * Cleanup Suggestions - junk-scan review queue (3g), per-item
-          quarantine
+        * Cleanup Suggestions - junk-scan review queue (3g, 3o) including
+          Downloads, checkbox multi-select + a single "Delete Selected"
+          bulk action (plus Select All/Select None) rather than a
+          per-row instant button
         * Duplicates - grouped duplicate files (3e), per-file quarantine
         * Large & Old Files - sortable list (3f), per-file quarantine
         * Quarantine - active items, countdown, restore, purge expired
@@ -260,8 +263,14 @@ without ever risking files the user actually cares about.
       Suggestions" review queue. They were built as separate screens
       instead, since their scan triggers, thresholds, and result shapes
       are different enough that combining them would have made one screen
-      overloaded. Cleanup Suggestions now covers only the category-based
-      junk scan (3g).
+      overloaded. Cleanup Suggestions now covers the category-based junk
+      scan (3g) plus Downloads (3o).
+    - Change (later): Cleanup Suggestions was originally per-row instant
+      delete (a "Quarantine" button per line). Changed to checkbox
+      multi-select + one bulk "Delete Selected" action when Downloads was
+      added, since reviewing potentially hundreds of Downloads files one
+      button-click at a time doesn't scale - the user now checks
+      everything they want gone, then confirms once.
 
 3l. File/app size display format (decision - IMPLEMENTED)
     - DECISION MADE: every size shown anywhere in the app uses one shared
@@ -299,6 +308,28 @@ without ever risking files the user actually cares about.
       domain (disk health, not disk cleaning) and are OUT OF SCOPE unless
       requested later. Nothing built here, nothing needed.
 
+3o. Downloads folder scanning (decision - IMPLEMENTED)
+    - DECISION MADE: Downloads accumulates a lot of clutter (installers,
+      one-off attachments, archives) and deserves its own scan category
+      rather than requiring the user to add it manually as a Scan Root.
+    - Lists files sitting directly in the Downloads folder (not recursive
+      - a subfolder the user already created there is treated as
+      intentional organization, same rule as the Desktop Organizer
+      leaving existing subfolders alone). Each file is its own row (not
+      aggregated like browser cache/temp), showing size and last-modified
+      date so the user can judge age at a glance.
+    - Resolved via the default location (%USERPROFILE%\Downloads) - no
+      Windows Known-Folder COM lookup for a user-relocated Downloads
+      folder; not worth the interop complexity for a personal tool.
+    - DECISION MADE: always manual-review tier, NEVER whitelist-eligible
+      (enforced in WhitelistPolicy) - unlike browser cache or temp files,
+      Downloads content is unpredictable (could be an installer not yet
+      run, a document, an unextracted archive) so it can never be treated
+      as safe-to-auto-delete.
+    - Surfaced in the Cleanup Suggestions screen (3k) alongside the other
+      junk categories, using the same checkbox multi-select + bulk delete
+      flow.
+
 4. OUT OF SCOPE / DEFERRED (deliberate, not gaps)
 ----------------------------------------------------
 - ML-based or LLM-assisted file classification (3a).
@@ -320,8 +351,9 @@ without ever risking files the user actually cares about.
   layer supports it; nothing in the app currently lets a user enable it.
 - Before/after cleanup report is not surfaced anywhere in the UI (3j).
   CleanupReportBuilder is implemented and unit-tested but unused by any
-  screen - individual quarantine actions only show a one-line status
-  message, not an aggregate summary.
+  screen - quarantine actions (including the new bulk "Delete Selected"
+  in Cleanup Suggestions) only show a one-line status message with a
+  total, not the structured per-category CleanupReport breakdown.
 - Disk Scan/Treemap screen doesn't show the drive used/free breakdown
   from 3m in its header (3f, 3m) - only the Dashboard does.
 - Dashboard's drive overview doesn't auto-refresh after a cleanup action
@@ -402,3 +434,12 @@ however the user wants to pick it up next.
   Old Files became separate screens instead of folding into Cleanup
   Suggestions), and noted the invariant-culture size-formatting fix and
   the two UI-freeze bug fixes.
+- Added (3o): Downloads folder scanning - per-file, size + last-modified
+  date, always manual-review/never whitelist-eligible (Downloads content
+  is unpredictable). Verified against the real Downloads folder (410
+  candidates found, correct categorization and eligibility flags).
+- Changed (3k): Cleanup Suggestions redesigned from per-row instant
+  "Quarantine" buttons to checkbox multi-select + Select All/Select None
+  + a single bulk "Delete Selected" action - driven by the Downloads
+  addition, since one-button-per-row doesn't scale to a folder that can
+  hold hundreds of files. 5 new tests (110 total, all passing).

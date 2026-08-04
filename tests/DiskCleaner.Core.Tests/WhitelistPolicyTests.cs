@@ -8,6 +8,7 @@ public class WhitelistPolicyTests
     [InlineData(JunkCategory.WindowsUpdateLeftovers, false)]
     [InlineData(JunkCategory.Duplicate, false)]
     [InlineData(JunkCategory.LargeOldFile, false)]
+    [InlineData(JunkCategory.Downloads, false)]
     [InlineData(JunkCategory.BrowserCache, true)]
     [InlineData(JunkCategory.WindowsTemp, true)]
     [InlineData(JunkCategory.DevBuildFolders, true)]

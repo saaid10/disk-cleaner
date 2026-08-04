@@ -137,6 +137,59 @@ public class JunkScannerTests : IDisposable
         Assert.Empty(results);
     }
 
+    [Fact]
+    public void ScanDownloadsFolder_ListsTopLevelFilesWithLastModified()
+    {
+        var downloads = Combine("Downloads");
+        Directory.CreateDirectory(downloads);
+        var filePath = Path.Combine(downloads, "installer.exe");
+        File.WriteAllText(filePath, "1234567890"); // 10 bytes
+        var modified = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(filePath, modified);
+
+        var results = _scanner.ScanDownloadsFolder(downloads);
+
+        var result = Assert.Single(results);
+        Assert.Equal(filePath, result.Path);
+        Assert.Equal(JunkCategory.Downloads, result.Category);
+        Assert.Equal(10, result.SizeBytes);
+        Assert.Equal(modified, result.LastModifiedUtc);
+        Assert.False(result.WhitelistEligible);
+    }
+
+    [Fact]
+    public void ScanDownloadsFolder_DoesNotDescendIntoSubfolders()
+    {
+        var downloads = Combine("Downloads");
+        var subfolder = Path.Combine(downloads, "MyOrganizedStuff");
+        Directory.CreateDirectory(subfolder);
+        File.WriteAllText(Path.Combine(subfolder, "nested.txt"), "data");
+
+        var results = _scanner.ScanDownloadsFolder(downloads);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ScanDownloadsFolder_NonExistentFolder_ReturnsEmpty()
+    {
+        var results = _scanner.ScanDownloadsFolder(Combine("NoSuchDownloads"));
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ScanDownloadsFolder_ProtectedFolder_ReturnsEmpty()
+    {
+        var downloads = Combine("Downloads");
+        Directory.CreateDirectory(downloads);
+        File.WriteAllText(Path.Combine(downloads, "file.zip"), "data");
+        _protectedFolders.Add(downloads);
+
+        var results = _scanner.ScanDownloadsFolder(downloads);
+
+        Assert.Empty(results);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))

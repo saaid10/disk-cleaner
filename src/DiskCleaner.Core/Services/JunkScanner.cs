@@ -89,6 +89,55 @@ public sealed class JunkScanner
         return results;
     }
 
+    /// <summary>
+    /// Lists files sitting directly in the Downloads folder (not recursive - browsers
+    /// rarely create subfolders there, and anything the user already organized into a
+    /// subfolder is treated as intentional, same as the Desktop Organizer's rule for
+    /// existing subfolders). Each file is its own result (not aggregated) with
+    /// LastModifiedUtc populated, since Downloads review is inherently per-file and
+    /// age is the main signal for "do I still need this."
+    /// </summary>
+    public IReadOnlyList<JunkScanResult> ScanDownloadsFolder(string downloadsPath)
+    {
+        var results = new List<JunkScanResult>();
+        if (!Directory.Exists(downloadsPath) || _protection.IsProtected(downloadsPath))
+        {
+            return results;
+        }
+
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(downloadsPath);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return results;
+        }
+
+        foreach (var file in files)
+        {
+            if (_protection.IsProtected(file))
+            {
+                continue;
+            }
+
+            FileInfo info;
+            try
+            {
+                info = new FileInfo(file);
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+
+            results.Add(new JunkScanResult(file, JunkCategory.Downloads, info.Length, info.LastWriteTimeUtc));
+        }
+
+        return results;
+    }
+
     private long ComputeSize(string path)
     {
         if (File.Exists(path))

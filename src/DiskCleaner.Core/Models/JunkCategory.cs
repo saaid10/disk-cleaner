@@ -14,4 +14,6 @@ public enum JunkCategory
     WindowsUpdateLeftovers,
     Duplicate,
     LargeOldFile,
+    /// <summary>Files sitting in the Downloads folder - could be anything, so always manual-review.</summary>
+    Downloads,
 }

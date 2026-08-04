@@ -1,39 +1,28 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using DiskCleaner.Core.Formatting;
 using DiskCleaner.Core.Models;
 
 namespace DiskCleaner.App.ViewModels;
 
+/// <summary>
+/// One row in the Cleanup Suggestions checkbox list. Selection doesn't delete
+/// anything by itself - the user checks the rows they want, then confirms via the
+/// screen's single "Delete Selected" bulk action.
+/// </summary>
 public sealed partial class JunkResultRowViewModel : ObservableObject
 {
-    private readonly JunkScanResult _result;
-    private readonly Action<JunkResultRowViewModel> _onQuarantine;
-
-    public JunkResultRowViewModel(JunkScanResult result, Action<JunkResultRowViewModel> onQuarantine)
+    public JunkResultRowViewModel(JunkScanResult result)
     {
-        _result = result;
-        _onQuarantine = onQuarantine;
+        Result = result;
     }
 
-    public JunkScanResult Result => _result;
-    public string Path => _result.Path;
-    public JunkCategory Category => _result.Category;
-    public string SizeDisplay => FileSizeFormatter.Format(_result.SizeBytes);
-    public bool WhitelistEligible => _result.WhitelistEligible;
+    public JunkScanResult Result { get; }
+    public string Path => Result.Path;
+    public JunkCategory Category => Result.Category;
+    public string SizeDisplay => FileSizeFormatter.Format(Result.SizeBytes);
+    public bool WhitelistEligible => Result.WhitelistEligible;
+    public string LastModifiedDisplay => Result.LastModifiedUtc?.ToLocalTime().ToString("yyyy-MM-dd") ?? string.Empty;
 
     [ObservableProperty]
-    private bool _isQuarantined;
-
-    [RelayCommand]
-    private void Quarantine()
-    {
-        if (IsQuarantined)
-        {
-            return;
-        }
-
-        _onQuarantine(this);
-        IsQuarantined = true;
-    }
+    private bool _isSelected;
 }

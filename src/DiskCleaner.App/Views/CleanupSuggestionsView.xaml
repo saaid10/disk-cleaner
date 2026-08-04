@@ -7,35 +7,35 @@
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
             <Button DockPanel.Dock="Right" Content="Scan" Padding="12,4" Command="{Binding ScanCommand}"/>
             <TextBlock Text="Cleanup Suggestions" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
         </DockPanel>
 
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Results}" AutoGenerateColumns="False" IsReadOnly="True"
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Select All" Padding="10,4" Margin="0,0,8,0" Command="{Binding SelectAllCommand}"/>
+            <Button Content="Select None" Padding="10,4" Margin="0,0,16,0" Command="{Binding SelectNoneCommand}"/>
+            <Button Content="Delete Selected" Padding="10,4" Command="{Binding DeleteSelectedCommand}"
+                    Background="#FBE3E1"/>
+        </StackPanel>
+
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
                   CanUserAddRows="False" GridLinesVisibility="Horizontal">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="3*"/>
-                <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.2*"/>
-                <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="Auto"/>
-                <DataGridTextColumn Header="Auto-clean eligible" Binding="{Binding WhitelistEligible}" Width="Auto"/>
-                <DataGridTemplateColumn Header="" Width="120">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Button Content="{Binding IsQuarantined, Converter={StaticResource BoolToQuarantineLabelConverter}}"
-                                    Command="{Binding QuarantineCommand}"
-                                    IsEnabled="{Binding IsQuarantined, Converter={StaticResource InverseBoolConverter}}"
-                                    Padding="8,2"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
+                <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="34"/>
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="3*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.2*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="Auto" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Downloaded" Binding="{Binding LastModifiedDisplay}" Width="Auto" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Auto-clean eligible" Binding="{Binding WhitelistEligible}" Width="Auto" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
+        <TextBlock Grid.Row="3" Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
     </Grid>
 </UserControl>

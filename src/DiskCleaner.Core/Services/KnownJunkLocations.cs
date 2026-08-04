@@ -51,4 +51,15 @@ public static class KnownJunkLocations
             Path.Combine(systemRoot, "SoftwareDistribution", "Download"),
         };
     }
+
+    /// <summary>
+    /// The user's Downloads folder. Uses the default location
+    /// (%USERPROFILE%\Downloads) - there's no managed .NET API for this folder
+    /// (unlike Desktop/Documents), and resolving a user-relocated Downloads folder
+    /// would need Windows Known Folder COM interop. Not worth the complexity for a
+    /// personal tool; the default location covers the vast majority of setups.
+    /// </summary>
+    public static string DownloadsFolderPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "Downloads");
 }

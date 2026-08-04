@@ -11,8 +11,10 @@ namespace DiskCleaner.App.ViewModels;
 
 /// <summary>
 /// Cleanup Suggestions screen (requirements.txt 3k): categorized junk-scan review
-/// queue. Every item requires manual confirm here - whitelisted auto-clean runs
-/// separately in the background (3i).
+/// queue, including the Downloads folder (per-file, always manual - Downloads can
+/// contain anything so it's never whitelist-eligible). Checkbox multi-select: the
+/// user checks whichever rows they want, then confirms with a single bulk
+/// "Delete Selected" action - nothing is quarantined on a per-row click.
 /// </summary>
 public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 {
@@ -36,7 +38,7 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
     public ObservableCollection<JunkResultRowViewModel> Results { get; } = new();
 
     [ObservableProperty]
-    private string _statusText = "Click \"Scan\" to check for junk (browser cache, Windows temp, Windows Update leftovers, and - if scan roots are configured - dev-build folders and old logs).";
+    private string _statusText = "Click \"Scan\" to check for junk (browser cache, Windows temp, Downloads, Windows Update leftovers, and - if scan roots are configured - dev-build folders and old logs).";
 
     [RelayCommand]
     private void Scan()
@@ -47,6 +49,7 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
         found.AddRange(_scanner.ScanKnownLocations(KnownJunkLocations.BrowserCachePaths(), JunkCategory.BrowserCache));
         found.AddRange(_scanner.ScanKnownLocations(KnownJunkLocations.WindowsTempPaths(), JunkCategory.WindowsTemp));
         found.AddRange(_scanner.ScanKnownLocations(KnownJunkLocations.WindowsUpdateLeftoverPaths(), JunkCategory.WindowsUpdateLeftovers));
+        found.AddRange(_scanner.ScanDownloadsFolder(KnownJunkLocations.DownloadsFolderPath()));
 
         var scanRoots = _settings.GetStringSet(ScanScopeSettingsKeys.ScanRoots);
         if (scanRoots.Count > 0)
@@ -58,7 +61,7 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 
         foreach (var result in found.OrderByDescending(r => r.SizeBytes))
         {
-            Results.Add(new JunkResultRowViewModel(result, OnQuarantineRequested));
+            Results.Add(new JunkResultRowViewModel(result));
         }
 
         StatusText = scanRoots.Count > 0
@@ -66,21 +69,60 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             : $"Found {Results.Count} candidates. Add scan roots in Settings to also check dev-build folders and log files.";
     }
 
-    private void OnQuarantineRequested(JunkResultRowViewModel row)
+    [RelayCommand]
+    private void SelectAll()
     {
-        try
+        foreach (var row in Results)
         {
-            _quarantine.Quarantine(row.Path, row.Category);
-            _history.Add(DateTime.UtcNow, row.Category, row.Result.SizeBytes, 1, "Manual cleanup suggestion");
-            StatusText = $"Quarantined {row.Path} ({FileSizeFormatter.Format(row.Result.SizeBytes)}).";
+            row.IsSelected = true;
         }
-        catch (IOException ex)
+    }
+
+    [RelayCommand]
+    private void SelectNone()
+    {
+        foreach (var row in Results)
         {
-            StatusText = $"Could not quarantine {row.Path}: {ex.Message}";
+            row.IsSelected = false;
         }
-        catch (UnauthorizedAccessException ex)
+    }
+
+    [RelayCommand]
+    private void DeleteSelected()
+    {
+        var selected = Results.Where(r => r.IsSelected).ToList();
+        if (selected.Count == 0)
         {
-            StatusText = $"Could not quarantine {row.Path}: {ex.Message}";
+            StatusText = "No items selected.";
+            return;
         }
+
+        var quarantinedCount = 0;
+        long quarantinedBytes = 0;
+        var failures = 0;
+
+        foreach (var row in selected)
+        {
+            try
+            {
+                _quarantine.Quarantine(row.Path, row.Category);
+                _history.Add(DateTime.UtcNow, row.Category, row.Result.SizeBytes, 1, "Manual cleanup suggestion");
+                quarantinedCount++;
+                quarantinedBytes += row.Result.SizeBytes;
+                Results.Remove(row);
+            }
+            catch (IOException)
+            {
+                failures++;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                failures++;
+            }
+        }
+
+        StatusText = failures == 0
+            ? $"Quarantined {quarantinedCount} item(s), reclaiming {FileSizeFormatter.Format(quarantinedBytes)}."
+            : $"Quarantined {quarantinedCount} item(s) ({FileSizeFormatter.Format(quarantinedBytes)}); {failures} failed (in use or access denied).";
     }
 }
