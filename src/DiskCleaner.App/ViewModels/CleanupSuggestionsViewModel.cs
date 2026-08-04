@@ -39,6 +39,7 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
         _quarantine = quarantine;
         _settings = settings;
         _history = history;
+        RefreshRecycleBinSummary();
     }
 
     public ObservableCollection<JunkResultRowViewModel> Results { get; } = new();
@@ -48,6 +49,12 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isBusy;
+
+    [ObservableProperty]
+    private string _recycleBinSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _recycleBinHasItems;
 
     [RelayCommand]
     private void Scan()
@@ -73,9 +80,49 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             Results.Add(new JunkResultRowViewModel(result));
         }
 
+        RefreshRecycleBinSummary();
+
         StatusText = scanRoots.Count > 0
             ? $"Found {Results.Count} candidates."
             : $"Found {Results.Count} candidates. Add scan roots in Settings to also check dev-build folders and log files.";
+    }
+
+    private void RefreshRecycleBinSummary()
+    {
+        var (sizeBytes, itemCount) = RecycleBinService.QuerySize();
+        RecycleBinHasItems = itemCount > 0;
+        RecycleBinSummary = itemCount > 0
+            ? $"Recycle Bin: {itemCount} item(s), {FileSizeFormatter.Format(sizeBytes)}"
+            : "Recycle Bin: empty";
+    }
+
+    [RelayCommand]
+    private void EmptyRecycleBin()
+    {
+        var (sizeBytes, itemCount) = RecycleBinService.QuerySize();
+        if (itemCount == 0)
+        {
+            StatusText = "Recycle Bin is already empty.";
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            $"Permanently empty the Recycle Bin? {itemCount} item(s), {FileSizeFormatter.Format(sizeBytes)}.\n\n"
+            + "Unlike the app's own quarantine, this is NOT recoverable - it's the same as emptying it from Explorer.",
+            "Empty Recycle Bin",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var succeeded = RecycleBinService.Empty();
+        RefreshRecycleBinSummary();
+        StatusText = succeeded
+            ? $"Emptied Recycle Bin, reclaiming {FileSizeFormatter.Format(sizeBytes)}."
+            : "Could not empty the Recycle Bin.";
     }
 
     [RelayCommand]

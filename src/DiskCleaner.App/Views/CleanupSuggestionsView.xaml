@@ -8,6 +8,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -18,7 +19,16 @@
             <TextBlock Text="Cleanup Suggestions" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
         </DockPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10"
+        <Border Grid.Row="1" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Empty Recycle Bin" Padding="10,4"
+                        Command="{Binding EmptyRecycleBinCommand}"
+                        IsEnabled="{Binding RecycleBinHasItems}"/>
+                <TextBlock Text="{Binding RecycleBinSummary}" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10"
                     IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
             <Button Content="Select All" Padding="10,4" Margin="0,0,8,0" Command="{Binding SelectAllCommand}"/>
             <Button Content="Select None" Padding="10,4" Margin="0,0,16,0" Command="{Binding SelectNoneCommand}"/>
@@ -28,7 +38,7 @@
                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
         </StackPanel>
 
-        <DataGrid Grid.Row="2" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
                   CanUserAddRows="False" GridLinesVisibility="Horizontal"
                   IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
             <DataGrid.Columns>
@@ -41,6 +51,6 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <TextBlock Grid.Row="3" Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
+        <TextBlock Grid.Row="4" Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
     </Grid>
 </UserControl>
