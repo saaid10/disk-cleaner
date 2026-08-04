@@ -1,9 +1,12 @@
 SMART DISK CLEANUP APP - REQUIREMENTS
 ==========================================
 Doc purpose: running record of requirements gathered during planning discussion.
-Status: IN PROGRESS - core architecture decided, some detail items filled in
-autonomously per user's request ("go through all of it, no need to ask
-permission unless deleting critical files") and flagged for review below.
+Status: V1 BUILT AND VERIFIED. Core architecture, safety model, and all 11
+planned features have been implemented, unit-tested, and run end-to-end.
+A handful of known gaps remain between "designed" and "fully wired into the
+UI" - see section 5.
+
+Repository: https://github.com/saaid10/disk-cleaner (private)
 
 1. PURPOSE
 ----------
@@ -13,25 +16,39 @@ without ever risking files the user actually cares about.
 
 2. PLATFORM / ARCHITECTURE
 ---------------------------
-- Frontend: native Windows desktop app, C#/.NET (WPF).
-- Local storage: SQLite (e.g. Microsoft.Data.Sqlite or EF Core), single local
-  DB file. No cloud/remote backend - this is a single-machine, single-user
-  personal tool.
-  - Stores: settings, whitelist categories, thresholds, protected-folder
-    list, Safe Haven path, quarantine metadata (original path, deleted
-    date, 7-day expiry), custom organizer rules, cleanup/scan history for
-    reporting.
-- Background operation: app runs with a system tray icon so scheduled
-  whitelisted auto-clean can run without the main window open.
-- Elevation model: app runs unelevated by default. Only prompts for UAC
-  elevation on-demand when an action specifically needs it (e.g. touching
-  Windows Update leftovers or another user profile's files). Never
-  always-elevated at launch.
+- Frontend: native Windows desktop app, C#/.NET 9 (WPF), MVVM via
+  CommunityToolkit.Mvvm.
+- Solution layout (BUILT):
+    * DiskCleaner.Core - all business logic (scanners, quarantine, org-
+      anizer rules, formatting, data access). No WPF/UI dependency, fully
+      unit-testable.
+    * DiskCleaner.App - WPF shell, ViewModels, Views, tray icon, Windows-
+      specific interop (shortcut resolution, folder picker).
+    * DiskCleaner.Core.Tests - xUnit test project. 105 tests, all passing.
+- Local storage: SQLite via Microsoft.Data.Sqlite (raw ADO.NET, not EF
+  Core - kept lightweight for a single-table-per-concept personal DB), one
+  local DB file at %LocalAppData%\DiskCleaner\diskcleaner.db.
+  - Stores: settings (key/value), whitelist categories, thresholds,
+    protected-folder list, Safe Haven path, quarantine metadata (original
+    path, deleted date, 7-day expiry), custom organizer rules, cleanup/
+    scan history for reporting.
+- Background operation: app runs with a system tray icon (NotifyIcon via
+  UseWindowsForms) so scheduled whitelisted auto-clean can run without the
+  main window open. Closing the window hides to tray instead of exiting;
+  tray "Exit" is the real quit path.
+- Elevation model (DESIGNED, NOT YET IMPLEMENTED): intent is to run
+  unelevated by default and only prompt for UAC when an action specific-
+  ally needs it (e.g. touching Windows Update leftovers). As built today,
+  there is no UAC prompt - scanning locations that need admin rights
+  (Windows.old, SoftwareDistribution) simply skips files it can't access
+  (UnauthorizedAccessException is caught and swallowed by the scanner) and
+  the Cleanup Suggestions list will just show whatever it *could* read
+  without elevation. Flagged as a known gap in section 5.
 
 3. CORE FEATURES
 -----------------
 
-3a. Smart engine (decision)
+3a. Smart engine (decision - IMPLEMENTED)
     - DECISION MADE: rule-based heuristics only. No ML, no LLM.
       Reasoning: personal-use, single-user tool - a learned/trained model
       is overkill engineering weight for the payoff, and rules are
@@ -42,8 +59,11 @@ without ever risking files the user actually cares about.
       personal tool); rules + LLM-assisted classification (adds cost/
       latency/nondeterminism for a tool whose whole point is predictability
       around deletion).
+    - Built: WhitelistPolicy hard-codes which categories can ever be
+      auto-clean-eligible (see 3b) - a safety guarantee enforced in code,
+      not just documented intent.
 
-3b. Delete safety & quarantine (decision)
+3b. Delete safety & quarantine (decision - IMPLEMENTED)
     - DECISION MADE: hybrid model, per category:
         * Whitelisted categories (user explicitly opts a category in) can
           be auto-cleaned on a schedule without asking each time.
@@ -57,8 +77,14 @@ without ever risking files the user actually cares about.
       are NEVER whitelist-eligible even though they're "junk" - deleting
       them is semi-irreversible (blocks OS rollback) and needs elevation,
       so they always require manual confirm regardless of settings.
+    - Built: QuarantineService (move/restore/purge-after-7-days), backed
+      by QuarantineRepository. Restore refuses to overwrite a file that
+      reappeared at the original path (throws
+      QuarantineRestoreConflictException) instead of clobbering it.
+      Quarantine screen in the app shows active items, per-item countdown,
+      restore, and a manual "Purge Expired" action.
 
-3c. Protected folders & Safe Haven (decision)
+3c. Protected folders & Safe Haven (decision - IMPLEMENTED)
     - DECISION MADE: both mechanisms, folder-based exclusion as primary.
         * Folder-based exclusion: user marks any existing folder as
           protected via settings. Recursive by default - protecting a
@@ -69,194 +95,254 @@ without ever risking files the user actually cares about.
           protected folder.
     - Protected/Safe Haven content is excluded from scanning entirely (not
       just from deletion), so it never appears in suggestions either.
+    - Built: PathProtectionService.IsProtected(path), consumed by every
+      scanner (junk, duplicates, large/old files, treemap). Protected
+      Folders screen in the app: add/remove folders, set Safe Haven path,
+      both via a native folder-browse dialog.
 
-3d. Desktop Organizer (decision)
+3d. Desktop Organizer (decision - IMPLEMENTED)
     - DECISION MADE: on-demand trigger only (button), not a continuous
       background watcher. Reasoning: auto-sorting the instant a file lands
       is annoying in practice - files often need to sit loose temporarily
-      (mid-download, about to be attached to an email). Optional smart
-      nudge/notification when loose desktop file count crosses a threshold
-      (e.g. "you have 40 loose files, want to tidy up?").
+      (mid-download, about to be attached to an email).
     - DECISION MADE: two-layer sorting logic.
         * Base layer: type-based mapping by extension (.pdf/.docx/.xlsx ->
           Documents, .png/.jpg/.gif -> Images, .zip/.rar -> Archives,
-          everything unmatched -> generic Programs/Other bucket).
-        * Override layer (built-in preset, ships day one): game-platform
-          detection for .exe/.lnk before falling back to the generic exe
-          bucket.
-            - Shortcuts (.lnk): resolve the shortcut's target path: if it
-              points into a Steam/Epic Games/GOG Games/Battle.net/Origin
-              install directory, move to a "Games" folder instead of the
-              generic bucket.
-            - Installer filenames: keyword match on common installer names
-              (SteamSetup.exe, EpicGamesLauncherInstaller.exe,
-              GOG_Galaxy...exe, etc.).
-        * Date-based sorting and fully custom user-defined keyword/path
-          rules are a future layer, not required for v1 (type-based +
-          game-platform preset already covers the main pain point).
+          .mp4/.mkv -> Videos, .mp3/.wav -> Audio, everything unmatched ->
+          generic "Other" bucket).
+        * Override layer (built-in preset, shipped): game-platform
+          detection for .exe/.lnk before falling back to the generic
+          "Programs" bucket.
+            - Shortcuts (.lnk): resolves the shortcut's target path via
+              the WScript.Shell COM object; if it points into a Steam/
+              Epic Games/GOG Games/Battle.net/Origin Games install
+              directory, moves to a "Games" folder instead of the generic
+              bucket. Unresolvable/non-game shortcuts fall back to
+              "Other" rather than being left untouched.
+            - Installer filenames: keyword match on common installer
+              names (SteamSetup, EpicGamesLauncherInstaller, GOG_Galaxy,
+              GOGGalaxySetup, BattlenetSetup, OriginSetup,
+              OriginThinSetup).
+        * Date-based sorting and a user-facing custom-rule-builder UI are
+          NOT built (still out of scope for v1 - see section 4). The data
+          model (OrganizerRule/OrganizerRuleRepository) exists for a
+          future custom-rule UI but nothing in the app writes to it yet.
     - DECISION MADE: existing subfolders already on the Desktop are left
-      alone by default (treated as intentional structure, not touched) -
-      only loose files sitting directly on the Desktop are sorted.
+      alone by default - only loose files sitting directly on the Desktop
+      are sorted.
     - DECISION MADE: reversible via a simple "Undo last organize" (reverts
-      the most recent batch move). Full quarantine/7-day retention is not
-      needed here since nothing is destroyed, only moved.
+      the most recent batch move). Execute() also refuses to overwrite an
+      occupied destination (skips instead of clobbering).
+    - Note: on-demand smart "nudge" notification when loose file count
+      crosses a threshold (mentioned in earlier discussion) was NOT built.
 
-3e. Duplicate file finder (filled in - flagged for review)
-    - Content-hash based (not filename/size alone), to guarantee accuracy.
-      Two-stage for performance: group files by size first (cheap), then
-      hash only files that share a size with at least one other file
-      (avoids hashing every file on the drive).
+3e. Duplicate file finder (decision - IMPLEMENTED)
+    - Content-hash based (SHA-256, not filename/size alone), to guarantee
+      accuracy. Two-stage for performance: group files by size first
+      (cheap), then hash only files that share a size with at least one
+      other file (avoids hashing every file on the drive).
     - On-demand scan only (not background/scheduled) - hashing is CPU/IO
-      heavy. User selects which folder(s)/drive(s) to include per scan.
+      heavy. Scoped to the user's configured Scan Roots (Settings), not
+      the whole drive by default.
     - Always manual-review tier (not whitelist-eligible) - which copy to
       keep is a judgment call, not a universally safe default. Duplicates
       the user chooses to remove go through the same quarantine flow as
       other manual deletions.
     - Protected folders / Safe Haven contents are excluded from duplicate
-      scans (per 3c).
+      scans (per 3c). Empty files are ignored (not meaningful duplicates).
 
-3f. Large & old file finder + visual disk map (filled in - flagged for review)
+3f. Large & old file finder + visual disk map (decision - IMPLEMENTED)
     - Sortable list view: file size, last-accessed date, path. Default
       filter suggestion: files >100MB not accessed in 90+ days (both
-      thresholds user-configurable in Settings, not hardcoded).
-    - Visual disk map: treemap-style view of drive/folder structure
-      (WinDirStat/TreeSize-style), click to drill into a folder. Built as
-      a custom lightweight WPF control (rectangles sized proportionally to
-      file/folder size) rather than pulling in a heavy third-party charting
-      dependency.
+      thresholds user-configurable in Settings, not hardcoded). Noted in
+      code: NTFS last-access-time tracking is often disabled by default
+      on Windows for performance, so this signal can lag reality on some
+      systems - still the closest available without a separate usage
+      tracker.
+    - Visual disk map: treemap-style view of drive/folder structure,
+      click a folder rectangle to drill in, "Up" to go back. Built as a
+      custom lightweight WPF control - a simple proportional slice
+      layout (sliced along the longer axis, largest node first), not a
+      full squarified treemap. Loads asynchronously (Task.Run) with a
+      "Loading..." indicator, since summing a whole drive root's folder
+      sizes can take real time - an earlier synchronous version froze the
+      UI on navigation and was caught and fixed during final verification.
     - Treemap color-coding reuses the same file-type categories as the
-      Desktop Organizer's type buckets (Documents/Images/Archives/etc.) for
-      a consistent visual language across the app.
+      Desktop Organizer's type buckets (Documents/Images/Archives/
+      Installers/Videos/Audio/Other), plus a "Folder" category for
+      subfolder nodes, for a consistent visual language across the app.
     - Always manual-review tier - never auto-deleted, only surfaced as
       suggestions.
+    - Gap: the Disk Scan/Treemap screen does NOT currently show the per-
+      drive used/free breakdown from 3m in its header - that only appears
+      on the Dashboard. See section 5.
 
-3g. Category-aware junk scanning (filled in - flagged for review)
-    - In-scope categories for v1:
-        * Browser cache (Chrome/Edge/Firefox known cache paths)
+3g. Category-aware junk scanning (decision - IMPLEMENTED, one item deferred)
+    - In-scope categories, BUILT:
+        * Browser cache (Chrome/Edge known cache paths; Firefox profile
+          cache2 folders auto-discovered)
         * Windows temp folders (%TEMP%, C:\Windows\Temp)
-        * Recycle Bin (report current size; "Empty Recycle Bin" offered as
-          a direct action - not routed through the app's own quarantine
-          since the Recycle Bin already IS a quarantine)
         * Dev build/dependency folders (node_modules, obj, bin, dist,
-          .next, target, etc.) - regenerable via reinstall/rebuild
-        * Log files (*.log older than a configurable age, in common
-          locations)
-        * Windows Update leftovers (Windows.old, SoftwareDistribution) -
-          see 3b, always manual + elevation required
-    - Deferred / out of scope for v1: orphaned game-install leftovers
-      (workshop temp files, old patch caches, etc.) - reliable detection
-      needs per-launcher knowledge/APIs that aren't worth building for a
-      personal tool right now. Revisit later if it becomes a real pain
-      point.
-    - Whitelist-eligible (safe, easily regenerated, can go in the
-      auto-clean tier if the user opts in): browser cache, Windows temp,
-      dev build/dependency folders, log files.
-    - Always manual-review tier: Windows Update leftovers, and by extension
-      duplicates and large/old files (3e, 3f) since those are judgment
-      calls, not universally-safe categories.
+          .next, target) - recursive scan, does not descend into a
+          matched folder once found
+        * Log files (*.log older than a configurable age, within the
+          user's configured Scan Roots)
+        * Windows Update leftovers (Windows.old, SoftwareDistribution\
+          Download) - see 3b, always manual + would need elevation
+          (elevation prompting itself not yet built, see section 2)
+    - NOT BUILT: Recycle Bin size reporting / "Empty Recycle Bin" direct
+      action. Was planned as a whitelist-eligible, quarantine-bypassing
+      action (since the Recycle Bin already IS a quarantine) but no code
+      exists for it yet. See section 5.
+    - Deferred / out of scope for v1 (unchanged): orphaned game-install
+      leftovers (workshop temp files, old patch caches, etc.) - reliable
+      detection needs per-launcher knowledge/APIs not worth building for
+      a personal tool right now.
+    - Whitelist-eligible (enforced by WhitelistPolicy in code): browser
+      cache, Windows temp, dev build/dependency folders, log files.
+    - Always manual-review tier (enforced by WhitelistPolicy in code):
+      Windows Update leftovers, duplicates, large/old files - never
+      auto-clean-eligible even if somehow present in a whitelist setting.
 
-3h. Scan scope (filled in - flagged for review)
-    - All local fixed drives (C:, D:, etc.) supported; user selects which
-      drives/folders are included in a given scan.
-    - External/removable drives: included when attached, but excluded by
-      default until the user explicitly opts a device in (avoids
-      accidentally scanning a plugged-in USB backup drive).
-    - Network drives: out of scope for v1 (adds latency/permissions
-      complexity not worth it for a personal local-cleanup tool).
+3h. Scan scope (decision - PARTIALLY IMPLEMENTED)
+    - All local fixed drives (C:, D:, etc.) supported for the Dashboard's
+      drive overview - always shown, no opt-in needed.
+    - Dev-build/log/duplicate/large-old-file scans are scoped to user-
+      selected "Scan Roots" (Settings screen: add/remove folders via a
+      native folder-browse dialog) rather than the whole drive by default.
+    - External/removable drives: the underlying service
+      (DriveSpaceService.GetDrives) supports an opt-in list of removable
+      drive names, excluded unless explicitly passed in - but no Settings
+      UI exists yet to manage that opt-in list, so in practice removable
+      drives are always excluded from the Dashboard today. See section 5.
+    - Network drives: out of scope for v1 (unchanged).
 
-3i. Scheduling (filled in - flagged for review)
-    - Whitelisted categories (3b/3g) can run on a user-configured schedule
-      (e.g. weekly) via the system tray background process. Interval is a
-      Settings value, not hardcoded.
-    - All other scan types (duplicates, large/old files) are on-demand
-      only, triggered manually - not scheduled, since they're
-      review-required anyway.
+3i. Scheduling (decision - IMPLEMENTED)
+    - Whitelisted categories (3b/3g) run on a user-configured interval
+      (Settings: "Auto-clean interval (days)", default 7) via an hourly
+      due-check timer (AutoCleanBackgroundService) running in the tray
+      process. All other scan types (duplicates, large/old files, manual
+      Cleanup Suggestions) are on-demand only, triggered by clicking
+      "Scan" - not scheduled, since they're review-required anyway.
+    - Background scan failures are logged to a local file
+      (%LocalAppData%\DiskCleaner\app.log) instead of silently swallowed
+      or crashing the app.
 
-3j. Before/after reporting (filled in - flagged for review)
-    - After any cleanup action (manual or auto), show a summary: total
-      space reclaimed, breakdown by category, list of what was moved to
-      quarantine (with the 7-day countdown visible).
+3j. Before/after reporting (decision - CORE LOGIC BUILT, NOT SURFACED IN UI)
+    - CleanupReportBuilder exists and is unit-tested: aggregates total
+      bytes reclaimed + per-category breakdown, either from a just-
+      completed action's quarantined items or from historical
+      CleanupHistory rows.
+    - Gap: no screen or dialog in the app actually displays a
+      CleanupReport yet. Today, Cleanup Suggestions/Duplicates/Large&Old
+      Files show a one-line status message per item quarantined ("Quaran-
+      tined X (size)"), not an aggregate before/after summary. The
+      Quarantine screen shows live active items with countdowns, which
+      covers "what's pending deletion" but not "what a completed action
+      just accomplished." See section 5.
 
-3k. Main screens / navigation (filled in - flagged for review)
-    - DECISION MADE (draft):
-        * Dashboard - total space overview, quick actions, quarantine
-          countdown status
-        * Disk Scan / Treemap - visual drive explorer (3f)
-        * Cleanup Suggestions - categorized review queue (junk categories,
-          large/old files, duplicates), accept/reject per item
-        * Quarantine - items pending permanent deletion, restore option,
-          countdown per item
-        * Desktop Organizer - on-demand organize, undo last, rule presets
-        * Protected Folders / Safe Haven - manage exclusions
-        * Settings - whitelist categories, thresholds, scan schedule,
-          organizer rules
+3k. Main screens / navigation (decision - IMPLEMENTED, structure changed
+    from original draft)
+    - BUILT: 9 screens behind a sidebar shell (ShellViewModel), lazily
+      created and cached per screen so switching tabs doesn't re-scan:
+        * Dashboard - per-drive used/free overview (3m), manual refresh
+        * Disk Scan - treemap drill-down (3f)
+        * Cleanup Suggestions - junk-scan review queue (3g), per-item
+          quarantine
+        * Duplicates - grouped duplicate files (3e), per-file quarantine
+        * Large & Old Files - sortable list (3f), per-file quarantine
+        * Quarantine - active items, countdown, restore, purge expired
+        * Desktop Organizer - organize-now + undo-last (3d)
+        * Protected Folders - manage exclusions + Safe Haven (3c)
+        * Settings - whitelist opt-ins, scan roots, all thresholds
+    - Change from the original draft: Duplicates and Large & Old Files
+      were originally sketched as part of a single combined "Cleanup
+      Suggestions" review queue. They were built as separate screens
+      instead, since their scan triggers, thresholds, and result shapes
+      are different enough that combining them would have made one screen
+      overloaded. Cleanup Suggestions now covers only the category-based
+      junk scan (3g).
 
-3l. File/app size display format (decision)
-    - DECISION MADE: every size shown anywhere in the app (Cleanup
-      Suggestions, Duplicate finder, Large/Old file finder, Treemap,
-      Quarantine, Desktop Organizer, before/after reports, per-app size
-      if app/install size is ever shown) uses one shared adaptive-unit
-      formatter - not raw bytes.
+3l. File/app size display format (decision - IMPLEMENTED)
+    - DECISION MADE: every size shown anywhere in the app uses one shared
+      adaptive-unit formatter (FileSizeFormatter, Core) - not raw bytes.
     - Unit priority: GB first, then MB, then KB, then bytes - i.e. use the
       largest unit that keeps the displayed number >= 1:
         * >= 1 GB   -> show as GB (e.g. "2.34 GB")
         * >= 1 MB   -> show as MB (e.g. "487.10 MB")
         * >= 1 KB   -> show as KB (e.g. "312 KB")
         * < 1 KB    -> show as bytes (e.g. "480 B")
-    - 2 decimal places for GB/MB, whole numbers for KB/bytes (matches how
-      Windows Explorer displays sizes, so it reads as familiar rather than
-      needing its own convention).
-    - Applies to single files, folders/apps (aggregate size of contents),
-      and summary totals (e.g. Dashboard "total space reclaimed") alike.
+    - 2 decimal places for GB/MB, whole numbers for KB/bytes. Formatted
+      with invariant culture (not the OS locale) so the decimal separator
+      is always "." regardless of the machine's regional settings - found
+      during testing that the dev machine's locale used "," and broke the
+      original locale-aware formatting.
+    - Applies to single files, folders (aggregate size), and summary
+      totals alike - used in Dashboard, Cleanup Suggestions, Duplicates,
+      Large/Old Files, Treemap, Quarantine, Desktop Organizer status text.
 
-3m. Drive space overview (decision)
-    - DECISION MADE: Dashboard (and the header of the Disk Scan/Treemap
-      screen) shows, per drive currently in scope (3h - fixed drives plus
-      any opted-in external drives), a used/free breakdown:
-        * Total capacity, space used, space free - each formatted with
-          the shared adaptive size formatter (3l).
-        * A visual proportion bar (used vs. free, two-color, matching the
-          familiar Windows "This PC" drive-bar look) alongside the numbers
-          - not numbers alone.
-    - One card/row per drive when multiple drives are in scope (not a
-      single combined number across drives, since capacity is inherently
-      per-drive).
-    - Refreshes after any cleanup action (manual delete, whitelist
-      auto-clean, quarantine expiry) so free space reflects reality
-      immediately rather than only on next full scan.
+3m. Drive space overview (decision - IMPLEMENTED on Dashboard only)
+    - DECISION MADE: Dashboard shows, per fixed drive, a used/free
+      breakdown: total capacity, space used, space free (via the shared
+      size formatter, 3l) plus a visual two-color proportion bar.
+    - One card per drive. Manual "Refresh" button (not yet auto-refreshing
+      after cleanup actions on other screens - see section 5).
+    - Gap: the Disk Scan/Treemap screen header does NOT show this
+      breakdown as originally planned - only the current folder path and
+      Up/Refresh buttons. See 3f and section 5.
 
-3n. SSD vs HDD handling (decision)
+3n. SSD vs HDD handling (decision - unchanged, correctly out of scope)
     - DECISION MADE: no filesystem/drive-type-specific cleanup logic
       needed - junk/duplicate/large-file cleanup works the same way
       regardless of SSD or HDD. SSD-specific health features (TRIM
       triggering, SMART/wear-level monitoring) are a different problem
       domain (disk health, not disk cleaning) and are OUT OF SCOPE unless
-      requested later.
+      requested later. Nothing built here, nothing needed.
 
-4. OUT OF SCOPE / DEFERRED
-----------------------------
+4. OUT OF SCOPE / DEFERRED (deliberate, not gaps)
+----------------------------------------------------
 - ML-based or LLM-assisted file classification (3a).
 - Continuous/real-time background Desktop watching (3d) - on-demand only.
 - Fully custom user-authored rule builder UI for the organizer - only the
-  built-in game-platform preset ships in v1 (3d).
+  built-in game-platform preset ships in v1 (3d). Data model exists
+  (OrganizerRule) but no UI writes to it.
 - Orphaned game-install leftover detection (3g).
 - Network drive scanning (3h).
 - SSD health monitoring / TRIM / SMART data (3n).
 
-5. OPEN QUESTIONS / NOT YET CLARIFIED
---------------------------------------
-- Items in sections 3e-3k were filled in with reasonable defaults per the
-  user's instruction to proceed without asking permission for each one -
-  not yet explicitly confirmed by the user. Flagged for review/amendment.
-- Exact default thresholds (large-file size cutoff, "old" age cutoffs per
-  category, loose-desktop-file nudge count) are drafted as sensible
-  defaults but not yet confirmed.
+5. KNOWN GAPS (in scope, designed, not yet fully implemented)
+------------------------------------------------------------------
+- UAC elevation prompting is not implemented (2). Windows Update leftover
+  scanning silently skips files it can't access instead of prompting.
+- Recycle Bin size reporting + "Empty Recycle Bin" action is not built
+  (3g). Was planned as part of the junk-category list.
+- Removable/external drive opt-in has no Settings UI (3h). The service
+  layer supports it; nothing in the app currently lets a user enable it.
+- Before/after cleanup report is not surfaced anywhere in the UI (3j).
+  CleanupReportBuilder is implemented and unit-tested but unused by any
+  screen - individual quarantine actions only show a one-line status
+  message, not an aggregate summary.
+- Disk Scan/Treemap screen doesn't show the drive used/free breakdown
+  from 3m in its header (3f, 3m) - only the Dashboard does.
+- Dashboard's drive overview doesn't auto-refresh after a cleanup action
+  on another screen (3m) - requires a manual "Refresh" click.
+- Loose-desktop-file-count "nudge" notification (mentioned in early
+  Desktop Organizer discussion) was not built (3d).
+- Date-based sorting and custom keyword/path rules for the Desktop
+  Organizer are not built (3d) - type-based + game-platform preset only.
 
 6. STATUS
 ----------
-Core architecture and safety model fully decided through discussion.
-Feature-detail sections filled in autonomously and awaiting user review/
-amendment before moving into data model design and project scaffold.
+V1 is built, unit-tested (105 Core tests passing), and verified by
+actually running the app: launched the WPF shell, drove every nav item
+via UI Automation, and visually confirmed each of the 9 screens renders
+correctly. Two real bugs were found and fixed during that verification
+pass (Cleanup Suggestions and Treemap were both scanning synchronously on
+their view-model constructors, freezing the UI on first navigation) -
+both are now async/on-demand and re-verified working. All work is
+committed and pushed to the GitHub repository listed at the top of this
+document. Remaining work is the known-gaps list in section 5, prioritized
+however the user wants to pick it up next.
 
 7. CHANGE LOG
 --------------
@@ -279,7 +365,7 @@ amendment before moving into data model design and project scaffold.
   game-platform detection override via shortcut-target resolution and
   installer filename matching), existing subfolders left alone, simple
   undo-last-organize.
-- Filled in (pending user review): duplicate finder mechanics, large/old
+- Filled in (later implemented): duplicate finder mechanics, large/old
   file finder + treemap visualization, category-aware junk scanning scope
   and whitelist eligibility per category, scan scope (drives), local
   SQLite storage, scheduling model, before/after reporting, draft screen
@@ -290,3 +376,29 @@ amendment before moving into data model design and project scaffold.
 - Decided: Dashboard and Disk Scan screen show a per-drive used/free
   breakdown (total, used, free + visual proportion bar), refreshing after
   any cleanup action.
+- Implemented: full solution scaffold (DiskCleaner.Core/.App/.Core.Tests),
+  git repo created and pushed to GitHub (saaid10/disk-cleaner, private).
+- Implemented: SQLite settings/persistence layer, WhitelistPolicy safety
+  guarantee, PathProtectionService, QuarantineService, JunkScanner,
+  DuplicateFileFinder, LargeOldFileFinder + FileTypeCategorizer +
+  DirectoryUsageService + TreemapLayoutEngine, DesktopOrganizerService +
+  Windows shortcut resolver, AutoCleanRunner + tray icon + background
+  scheduler + AppLogger, CleanupReportBuilder - all with unit tests
+  (105 total, all passing).
+- Implemented: full 9-screen navigation shell wiring every Core service
+  into the WPF UI.
+- Fixed (found during final end-to-end verification): CleanupSuggestions
+  and Treemap view models were both scanning synchronously in their
+  constructors, freezing the UI on first navigation to those screens.
+  Made Cleanup Suggestions on-demand only (matching Duplicates/Large&Old
+  Files); made Treemap load asynchronously with a "Loading..." indicator
+  and stale-result discarding. Re-verified via UI Automation after both
+  fixes - all 9 screens now navigate instantly with no freezes.
+- Documented (this update): reconciled requirements doc against actual
+  implementation - marked each section IMPLEMENTED / PARTIALLY
+  IMPLEMENTED / NOT BUILT, added section 5 (Known Gaps) distinguishing
+  "not yet wired up" from section 4's deliberately-deferred items, updated
+  section 3k to reflect the actual 9-screen split (Duplicates and Large &
+  Old Files became separate screens instead of folding into Cleanup
+  Suggestions), and noted the invariant-culture size-formatting fix and
+  the two UI-freeze bug fixes.
