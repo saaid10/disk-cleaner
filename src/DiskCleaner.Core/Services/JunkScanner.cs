@@ -71,7 +71,7 @@ public sealed class JunkScanner
 
         foreach (var root in scanRoots)
         {
-            foreach (var file in EnumerateFilesSafely(root, "*.log"))
+            foreach (var file in FileSystemWalker.EnumerateFilesSafely(root, "*.log"))
             {
                 if (_protection.IsProtected(file))
                 {
@@ -101,7 +101,7 @@ public sealed class JunkScanner
             return 0;
         }
 
-        return EnumerateFilesSafely(path, "*").Sum(f => new FileInfo(f).Length);
+        return FileSystemWalker.EnumerateFilesSafely(path).Sum(f => new FileInfo(f).Length);
     }
 
     private IEnumerable<string> FindMatchingFolders(string root, HashSet<string> names)
@@ -150,56 +150,4 @@ public sealed class JunkScanner
         }
     }
 
-    private static IEnumerable<string> EnumerateFilesSafely(string root, string searchPattern)
-    {
-        if (!Directory.Exists(root))
-        {
-            yield break;
-        }
-
-        var stack = new Stack<string>();
-        stack.Push(root);
-
-        while (stack.Count > 0)
-        {
-            var current = stack.Pop();
-            IEnumerable<string> files;
-            try
-            {
-                files = Directory.EnumerateFiles(current, searchPattern);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                continue;
-            }
-            catch (IOException)
-            {
-                continue;
-            }
-
-            foreach (var file in files)
-            {
-                yield return file;
-            }
-
-            IEnumerable<string> subdirs;
-            try
-            {
-                subdirs = Directory.EnumerateDirectories(current);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                continue;
-            }
-            catch (IOException)
-            {
-                continue;
-            }
-
-            foreach (var dir in subdirs)
-            {
-                stack.Push(dir);
-            }
-        }
-    }
 }
