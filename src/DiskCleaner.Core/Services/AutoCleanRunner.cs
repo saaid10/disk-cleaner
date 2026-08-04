@@ -57,6 +57,7 @@ public sealed class AutoCleanRunner
 
         var totalCount = 0;
         long totalBytes = 0;
+        var quarantinedItems = new List<QuarantineItem>();
 
         foreach (var group in eligible)
         {
@@ -67,7 +68,7 @@ public sealed class AutoCleanRunner
             {
                 try
                 {
-                    _quarantine.Quarantine(result.Path, result.Category);
+                    quarantinedItems.Add(_quarantine.Quarantine(result.Path, result.Category));
                     categoryCount++;
                     categoryBytes += result.SizeBytes;
                 }
@@ -88,6 +89,6 @@ public sealed class AutoCleanRunner
         }
 
         _settings.SetString(LastAutoCleanRunUtcSettingKey, nowUtc.ToString("O", CultureInfo.InvariantCulture));
-        return new AutoCleanRunResult(Ran: true, totalCount, totalBytes);
+        return new AutoCleanRunResult(Ran: true, totalCount, totalBytes, quarantinedItems);
     }
 }
