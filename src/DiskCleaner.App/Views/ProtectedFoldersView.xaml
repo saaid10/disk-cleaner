@@ -1,0 +1,50 @@
+<UserControl x:Class="DiskCleaner.App.Views.ProtectedFoldersView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vm="clr-namespace:DiskCleaner.App.ViewModels"
+             mc:Ignorable="d">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Protected Folders &amp; Safe Haven" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+
+        <Border Grid.Row="1" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Safe Haven folder" FontWeight="SemiBold"/>
+                <TextBlock Foreground="#666666" TextWrapping="Wrap" Margin="0,2,0,8">
+                    Anything placed inside this folder is automatically off-limits - never scanned, never suggested for cleanup.
+                </TextBlock>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,4" Command="{Binding BrowseSafeHavenCommand}"/>
+                    <TextBlock Text="{Binding SafeHavenPath}" VerticalAlignment="Center" Margin="0,0,10,0" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2">
+            <DockPanel Margin="0,0,0,8">
+                <Button DockPanel.Dock="Right" Content="Add Folder..." Padding="10,4" Command="{Binding AddFolderCommand}"/>
+                <TextBlock Text="Protected folders (recursive - everything inside is excluded)" VerticalAlignment="Center" FontWeight="SemiBold"/>
+            </DockPanel>
+            <ItemsControl ItemsSource="{Binding Folders}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="0,3">
+                            <Button DockPanel.Dock="Right" Content="Remove" Padding="8,2"
+                                    Command="{Binding DataContext.RemoveFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"/>
+                            <TextBlock Text="{Binding Path}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Grid>
+</UserControl>

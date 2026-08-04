@@ -13,8 +13,9 @@ public static class ScanScopeSettingsKeys
     /// <summary>Removable drive names explicitly opted into scanning (3h) - excluded by default.</summary>
     public const string OptedInRemovableDrives = "OptedInRemovableDrives";
 
-    public const string LargeFileMinSizeBytes = "LargeFileMinSizeBytes";
-    public const long DefaultLargeFileMinSizeBytes = 100L * 1024 * 1024; // 100MB
+    /// <summary>Stored in MB (not raw bytes) - keeps the value comfortably within int32 and matches the Settings UI's units.</summary>
+    public const string LargeFileMinSizeMb = "LargeFileMinSizeMb";
+    public const int DefaultLargeFileMinSizeMb = 100;
 
     public const string LargeFileMinDaysSinceAccess = "LargeFileMinDaysSinceAccess";
     public const int DefaultLargeFileMinDaysSinceAccess = 90;

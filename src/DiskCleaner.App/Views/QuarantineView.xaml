@@ -1,0 +1,42 @@
+<UserControl x:Class="DiskCleaner.App.Views.QuarantineView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Purge Expired" Padding="12,4" Margin="0,0,8,0" Command="{Binding PurgeExpiredCommand}"/>
+                <Button Content="Refresh" Padding="12,4" Command="{Binding RefreshCommand}"/>
+            </StackPanel>
+            <TextBlock Text="Quarantine" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
+                  CanUserAddRows="False" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Original Path" Binding="{Binding OriginalPath}" Width="3*"/>
+                <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="Auto"/>
+                <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="Auto"/>
+                <DataGridTextColumn Header="Time Remaining" Binding="{Binding TimeRemainingDisplay}" Width="Auto"/>
+                <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="2*"/>
+                <DataGridTemplateColumn Header="" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Restore" Command="{Binding RestoreCommand}" Padding="8,2"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Grid.Row="2" Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="#555555"/>
+    </Grid>
+</UserControl>
