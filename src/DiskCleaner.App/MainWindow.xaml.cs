@@ -1,6 +1,5 @@
 using System.Windows;
 using DiskCleaner.App.ViewModels;
-using DiskCleaner.Core.Services;
 
 namespace DiskCleaner.App;
 
@@ -9,9 +8,9 @@ namespace DiskCleaner.App;
 /// </summary>
 public partial class MainWindow : Window
 {
-    public MainWindow()
+    public MainWindow(App app)
     {
         InitializeComponent();
-        DataContext = new DashboardViewModel(new DriveSpaceService());
+        DataContext = new DashboardViewModel(app.DriveSpace);
     }
 }
