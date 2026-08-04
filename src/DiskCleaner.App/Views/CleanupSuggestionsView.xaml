@@ -13,19 +13,24 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <Button DockPanel.Dock="Right" Content="Scan" Padding="12,4" Command="{Binding ScanCommand}"/>
+            <Button DockPanel.Dock="Right" Content="Scan" Padding="12,4" Command="{Binding ScanCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"/>
             <TextBlock Text="Cleanup Suggestions" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
         </DockPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
             <Button Content="Select All" Padding="10,4" Margin="0,0,8,0" Command="{Binding SelectAllCommand}"/>
             <Button Content="Select None" Padding="10,4" Margin="0,0,16,0" Command="{Binding SelectNoneCommand}"/>
             <Button Content="Delete Selected" Padding="10,4" Command="{Binding DeleteSelectedCommand}"
                     Background="#FBE3E1"/>
+            <TextBlock Text="Deleting..." VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#666666"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
         </StackPanel>
 
         <DataGrid Grid.Row="2" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
-                  CanUserAddRows="False" GridLinesVisibility="Horizontal">
+                  CanUserAddRows="False" GridLinesVisibility="Horizontal"
+                  IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
             <DataGrid.Columns>
                 <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="34"/>
                 <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="3*" IsReadOnly="True"/>

@@ -2,10 +2,15 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DiskCleaner.App.Views;
 using DiskCleaner.Core.Data;
 using DiskCleaner.Core.Formatting;
 using DiskCleaner.Core.Models;
 using DiskCleaner.Core.Services;
+using MessageBox = System.Windows.MessageBox;
+using MessageBoxButton = System.Windows.MessageBoxButton;
+using MessageBoxImage = System.Windows.MessageBoxImage;
+using MessageBoxResult = System.Windows.MessageBoxResult;
 
 namespace DiskCleaner.App.ViewModels;
 
@@ -39,6 +44,9 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusText = "Click \"Scan\" to check for junk (browser cache, Windows temp, Downloads, Windows Update leftovers, and - if scan roots are configured - dev-build folders and old logs).";
+
+    [ObservableProperty]
+    private bool _isBusy;
 
     [RelayCommand]
     private void Scan()
@@ -88,7 +96,7 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DeleteSelected()
+    private async Task DeleteSelected()
     {
         var selected = Results.Where(r => r.IsSelected).ToList();
         if (selected.Count == 0)
@@ -97,9 +105,53 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             return;
         }
 
-        var quarantinedCount = 0;
-        long quarantinedBytes = 0;
+        var totalBytes = selected.Sum(r => r.Result.SizeBytes);
+        var confirmed = MessageBox.Show(
+            $"Quarantine {selected.Count} item(s), reclaiming up to {FileSizeFormatter.Format(totalBytes)}?\n\n"
+            + "This is reversible for 7 days via the Quarantine screen.",
+            "Confirm Cleanup",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusText = $"Quarantining {selected.Count} item(s)...";
+
+        // File I/O runs off the UI thread - a Delete Selected on Windows Temp can
+        // move hundreds of individual items (via QuarantineFolderContents), which
+        // would otherwise freeze the window the same way earlier synchronous scans
+        // did before those were fixed.
+        var (quarantinedItems, failures, processedRows) = await Task.Run(() => ProcessSelected(selected));
+
+        foreach (var row in processedRows)
+        {
+            Results.Remove(row);
+        }
+
+        IsBusy = false;
+
+        var quarantinedBytes = quarantinedItems.Sum(i => i.SizeBytes);
+        StatusText = failures == 0
+            ? $"Quarantined {quarantinedItems.Count} item(s), reclaiming {FileSizeFormatter.Format(quarantinedBytes)}."
+            : $"Quarantined {quarantinedItems.Count} item(s) ({FileSizeFormatter.Format(quarantinedBytes)}); {failures} item(s) skipped (in use or access denied).";
+
+        if (quarantinedItems.Count > 0)
+        {
+            var report = CleanupReportBuilder.FromQuarantinedItems(quarantinedItems);
+            new CleanupReportWindow(report) { Owner = System.Windows.Application.Current.MainWindow }.ShowDialog();
+        }
+    }
+
+    private (List<QuarantineItem> QuarantinedItems, int Failures, List<JunkResultRowViewModel> ProcessedRows) ProcessSelected(
+        List<JunkResultRowViewModel> selected)
+    {
+        var quarantinedItems = new List<QuarantineItem>();
         var failures = 0;
+        var processedRows = new List<JunkResultRowViewModel>();
 
         foreach (var row in selected)
         {
@@ -115,22 +167,20 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
                     _history.Add(
                         DateTime.UtcNow, row.Category, folderResult.SucceededBytes, folderResult.SucceededCount,
                         "Manual cleanup suggestion (folder contents)");
+                    quarantinedItems.AddRange(folderResult.SucceededItems);
                 }
 
-                quarantinedCount += folderResult.SucceededCount;
-                quarantinedBytes += folderResult.SucceededBytes;
                 failures += folderResult.FailedCount;
-                Results.Remove(row);
+                processedRows.Add(row);
                 continue;
             }
 
             try
             {
-                _quarantine.Quarantine(row.Path, row.Category);
+                var item = _quarantine.Quarantine(row.Path, row.Category);
                 _history.Add(DateTime.UtcNow, row.Category, row.Result.SizeBytes, 1, "Manual cleanup suggestion");
-                quarantinedCount++;
-                quarantinedBytes += row.Result.SizeBytes;
-                Results.Remove(row);
+                quarantinedItems.Add(item);
+                processedRows.Add(row);
             }
             catch (IOException)
             {
@@ -142,8 +192,6 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             }
         }
 
-        StatusText = failures == 0
-            ? $"Quarantined {quarantinedCount} item(s), reclaiming {FileSizeFormatter.Format(quarantinedBytes)}."
-            : $"Quarantined {quarantinedCount} item(s) ({FileSizeFormatter.Format(quarantinedBytes)}); {failures} item(s) skipped (in use or access denied).";
+        return (quarantinedItems, failures, processedRows);
     }
 }

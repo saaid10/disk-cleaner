@@ -183,6 +183,91 @@ public class QuarantineServiceTests : IDisposable
         Assert.Equal(0, result.FailedCount);
     }
 
+    [Fact]
+    public void Quarantine_RaisesChangedEventOnce()
+    {
+        var filePath = CreateWorkFile("event.tmp");
+        var service = CreateService();
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.Quarantine(filePath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(1, raisedCount);
+    }
+
+    [Fact]
+    public void QuarantineFolderContents_RaisesChangedEventOnce_NotPerFile()
+    {
+        var dirPath = Path.Combine(_workDir, "eventdir");
+        Directory.CreateDirectory(dirPath);
+        File.WriteAllText(Path.Combine(dirPath, "a.txt"), "1");
+        File.WriteAllText(Path.Combine(dirPath, "b.txt"), "2");
+        File.WriteAllText(Path.Combine(dirPath, "c.txt"), "3");
+        var service = CreateService();
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.QuarantineFolderContents(dirPath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(1, raisedCount); // one event for the whole batch, not one per file
+    }
+
+    [Fact]
+    public void QuarantineFolderContents_NothingSucceeded_DoesNotRaiseChangedEvent()
+    {
+        var dirPath = Path.Combine(_workDir, "emptyeventdir");
+        Directory.CreateDirectory(dirPath);
+        var service = CreateService();
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.QuarantineFolderContents(dirPath, JunkCategory.WindowsTemp);
+
+        Assert.Equal(0, raisedCount);
+    }
+
+    [Fact]
+    public void Restore_RaisesChangedEvent()
+    {
+        var filePath = CreateWorkFile("restore-event.tmp");
+        var service = CreateService();
+        var item = service.Quarantine(filePath, JunkCategory.WindowsTemp);
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.Restore(item.Id);
+
+        Assert.Equal(1, raisedCount);
+    }
+
+    [Fact]
+    public void PurgeExpired_WithExpiredItems_RaisesChangedEvent()
+    {
+        var filePath = CreateWorkFile("purge-event.tmp");
+        var service = CreateService();
+        service.Quarantine(filePath, JunkCategory.WindowsTemp);
+        _now = _now.AddDays(8);
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.PurgeExpired();
+
+        Assert.Equal(1, raisedCount);
+    }
+
+    [Fact]
+    public void PurgeExpired_NothingExpired_DoesNotRaiseChangedEvent()
+    {
+        var service = CreateService();
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.PurgeExpired();
+
+        Assert.Equal(0, raisedCount);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workDir))

@@ -16,6 +16,7 @@ public sealed partial class QuarantineViewModel : ObservableObject
     public QuarantineViewModel(QuarantineService quarantine)
     {
         _quarantine = quarantine;
+        _quarantine.Changed += OnQuarantineChanged;
         Refresh();
     }
 
@@ -23,6 +24,11 @@ public sealed partial class QuarantineViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusText = string.Empty;
+
+    // QuarantineService.Changed can fire from a background thread (bulk cleanup runs
+    // off the UI thread) - marshal back before touching the UI-bound collection.
+    private void OnQuarantineChanged() =>
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(Refresh);
 
     [RelayCommand]
     private void Refresh()

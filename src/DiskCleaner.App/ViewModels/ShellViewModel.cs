@@ -32,7 +32,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     private object? _currentView;
 
-    private DashboardViewModel Dashboard => _dashboard ??= new DashboardViewModel(_app.DriveSpace);
+    private DashboardViewModel Dashboard => _dashboard ??= new DashboardViewModel(_app.DriveSpace, _app.Quarantine);
 
     private TreemapViewModel Treemap => _treemap ??= new TreemapViewModel(_app.DirectoryUsage, _app.DriveSpace);
 
