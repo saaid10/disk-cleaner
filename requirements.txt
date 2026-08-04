@@ -191,7 +191,25 @@ without ever risking files the user actually cares about.
         * Settings - whitelist categories, thresholds, scan schedule,
           organizer rules
 
-3l. SSD vs HDD handling (decision)
+3l. File/app size display format (decision)
+    - DECISION MADE: every size shown anywhere in the app (Cleanup
+      Suggestions, Duplicate finder, Large/Old file finder, Treemap,
+      Quarantine, Desktop Organizer, before/after reports, per-app size
+      if app/install size is ever shown) uses one shared adaptive-unit
+      formatter - not raw bytes.
+    - Unit priority: GB first, then MB, then KB, then bytes - i.e. use the
+      largest unit that keeps the displayed number >= 1:
+        * >= 1 GB   -> show as GB (e.g. "2.34 GB")
+        * >= 1 MB   -> show as MB (e.g. "487.10 MB")
+        * >= 1 KB   -> show as KB (e.g. "312 KB")
+        * < 1 KB    -> show as bytes (e.g. "480 B")
+    - 2 decimal places for GB/MB, whole numbers for KB/bytes (matches how
+      Windows Explorer displays sizes, so it reads as familiar rather than
+      needing its own convention).
+    - Applies to single files, folders/apps (aggregate size of contents),
+      and summary totals (e.g. Dashboard "total space reclaimed") alike.
+
+3m. SSD vs HDD handling (decision)
     - DECISION MADE: no filesystem/drive-type-specific cleanup logic
       needed - junk/duplicate/large-file cleanup works the same way
       regardless of SSD or HDD. SSD-specific health features (TRIM
@@ -207,7 +225,7 @@ without ever risking files the user actually cares about.
   built-in game-platform preset ships in v1 (3d).
 - Orphaned game-install leftover detection (3g).
 - Network drive scanning (3h).
-- SSD health monitoring / TRIM / SMART data (3l).
+- SSD health monitoring / TRIM / SMART data (3m).
 
 5. OPEN QUESTIONS / NOT YET CLARIFIED
 --------------------------------------
@@ -250,3 +268,6 @@ amendment before moving into data model design and project scaffold.
   and whitelist eligibility per category, scan scope (drives), local
   SQLite storage, scheduling model, before/after reporting, draft screen
   list, SSD-vs-HDD scope decision.
+- Decided: single shared adaptive file-size formatter used everywhere in
+  the app - GB first, falling back to MB, then KB, then bytes, matching
+  Windows Explorer-style formatting.
