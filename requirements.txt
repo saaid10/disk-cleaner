@@ -413,15 +413,23 @@ Still open:
   path could not be exercised by automated testing (a UAC prompt runs
   on Windows' secure desktop by design) - worth a manual end-to-end
   check the next time Windows Update leftovers actually need it.
-- Disk Scan/Treemap total completion time for a genuinely huge folder
-  (e.g. C:\Windows on a large drive) is still bound by real disk I/O
-  and antivirus real-time-scan overhead per file, which no amount of
-  in-app parallelism fully eliminates - the fix so far makes results
-  appear progressively (usable within ~1s) rather than making the
-  single biggest folder finish instantly. Not re-verified with a fresh
-  timing number after the final flat-parallel rewrite (the app window
-  was minimized/in use during that verification pass) - worth spot-
-  checking against C:\ again.
+- Disk Scan/Treemap total completion time for a genuinely huge/many-
+  file drive is still bound by real disk I/O and antivirus real-time-
+  scan overhead per file, which no amount of in-app parallelism fully
+  eliminates. Re-verified live against the real C:\ root after fixing
+  a ConcurrentDictionary contention bug (nearly all of a huge folder's
+  leaf directories were hammering the same dictionary key concurrently
+  to accumulate its total - replaced with lock-free Interlocked array
+  accumulation): full completion improved from 63s to 38s, and the
+  layout itself is confirmed clean/readable (screenshotted: Program
+  Files (x86), XboxGames, Windows, Users, Program Files, ProgramData,
+  Riot Games, etc. all render as legible rectangles). The drive is
+  usable almost immediately regardless (11 of 25 items visible within
+  0.5s via streaming) even while the largest folders keep resolving in
+  the background - that's the practically important fix. 38s for full
+  completion on a heavily-loaded drive is a reasonable stopping point;
+  further gains would need bypassing antivirus interception per file,
+  which isn't appropriate for this app to attempt.
 
 6. STATUS
 ----------
@@ -443,10 +451,8 @@ synchronously on the UI thread; later, bulk quarantine doing the same),
 the Windows Temp whole-folder-move failure, and the treemap performance/
 layout issues. All work is committed and pushed to the GitHub repository
 listed at the top of this document. Remaining work is the short list in
-section 5 - a nudge notification and custom organizer rules (both minor),
-a manual end-to-end check of the UAC elevation prompt, and a fresh
-Disk Scan timing spot-check against C:\ after the latest performance
-rewrite.
+section 5 - a nudge notification and custom organizer rules (both minor)
+and a manual end-to-end check of the UAC elevation prompt.
 
 7. CHANGE LOG
 --------------
@@ -564,3 +570,13 @@ rewrite.
   within 0.5s in testing) and a configurable minimum-size filter that
   buckets small items into "Other (small items)". 9 new/changed tests
   (130 total, all passing).
+- Fixed (live-timed regression against the same flat-parallel design):
+  63 seconds full completion - worse than the nested attempt it
+  replaced. Root cause was ConcurrentDictionary contention (thousands
+  of leaf directories in one huge folder all updating the same
+  dictionary key concurrently). Replaced with parallel-per-top-level-
+  folder discovery + lock-free Interlocked array accumulation. Re-timed
+  live: 38 seconds full completion, layout confirmed clean via
+  screenshot against the real C:\ root. Documented as a reasonable
+  stopping point - remaining time is real disk I/O/antivirus overhead,
+  not software architecture.
