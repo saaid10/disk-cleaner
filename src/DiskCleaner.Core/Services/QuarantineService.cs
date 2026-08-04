@@ -34,7 +34,27 @@ public sealed class QuarantineService
     /// </summary>
     public event Action? Changed;
 
+    /// <summary>Where quarantined files physically live - exposed so an elevated helper process can move directly into it.</summary>
+    public string QuarantineRoot => _quarantineRoot;
+
     public IReadOnlyList<QuarantineItem> GetActiveItems() => _repo.GetActive();
+
+    /// <summary>
+    /// Records a quarantine entry for a file that was ALREADY moved into the
+    /// quarantine root by something else - specifically, an elevated helper process
+    /// (requirements.txt 2) that moved a Windows Update leftover a standard-user
+    /// process couldn't touch. This service still owns the database bookkeeping;
+    /// only the raw file move happened elsewhere.
+    /// </summary>
+    public QuarantineItem RecordExternallyMovedItem(string originalPath, string quarantinePath, JunkCategory category, long sizeBytes)
+    {
+        var now = _clock();
+        var expiresAt = now.Add(RetentionPeriod);
+        var id = _repo.Insert(originalPath, quarantinePath, category, sizeBytes, now, expiresAt);
+        var item = new QuarantineItem(id, originalPath, quarantinePath, category, sizeBytes, now, expiresAt, Restored: false, Purged: false);
+        Changed?.Invoke();
+        return item;
+    }
 
     public QuarantineItem Quarantine(string originalPath, JunkCategory category)
     {

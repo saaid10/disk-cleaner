@@ -47,6 +47,41 @@ public class QuarantineServiceTests : IDisposable
     }
 
     [Fact]
+    public void RecordExternallyMovedItem_AddsToActiveItemsWithoutMovingAnything()
+    {
+        // Simulates the elevated-helper flow: a file was already moved to
+        // quarantinePath by a separate elevated process, this service just needs
+        // to record it in the database.
+        var quarantinePath = Path.Combine(_quarantineRoot, "already-moved.dat");
+        Directory.CreateDirectory(_quarantineRoot);
+        File.WriteAllText(quarantinePath, "1234567890"); // 10 bytes
+        var service = CreateService();
+
+        var item = service.RecordExternallyMovedItem(
+            @"C:\Windows.old\some-file.dat", quarantinePath, JunkCategory.WindowsUpdateLeftovers, 10);
+
+        Assert.Contains(service.GetActiveItems(), i => i.Id == item.Id);
+        Assert.Equal(@"C:\Windows.old\some-file.dat", item.OriginalPath);
+        Assert.Equal(10, item.SizeBytes);
+        Assert.True(File.Exists(quarantinePath)); // untouched - this service didn't move it
+    }
+
+    [Fact]
+    public void RecordExternallyMovedItem_RaisesChangedEvent()
+    {
+        var quarantinePath = Path.Combine(_quarantineRoot, "already-moved2.dat");
+        Directory.CreateDirectory(_quarantineRoot);
+        File.WriteAllText(quarantinePath, "data");
+        var service = CreateService();
+        var raisedCount = 0;
+        service.Changed += () => raisedCount++;
+
+        service.RecordExternallyMovedItem(@"C:\Windows.old\x.dat", quarantinePath, JunkCategory.WindowsUpdateLeftovers, 4);
+
+        Assert.Equal(1, raisedCount);
+    }
+
+    [Fact]
     public void Quarantine_ThenRestore_MovesFileBack()
     {
         var filePath = CreateWorkFile("b.tmp", "restore-me");

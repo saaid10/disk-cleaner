@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DiskCleaner.App.Services;
 using DiskCleaner.App.Views;
 using DiskCleaner.Core.Data;
 using DiskCleaner.Core.Formatting;
@@ -125,7 +126,8 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
         // move hundreds of individual items (via QuarantineFolderContents), which
         // would otherwise freeze the window the same way earlier synchronous scans
         // did before those were fixed.
-        var (quarantinedItems, failures, processedRows) = await Task.Run(() => ProcessSelected(selected));
+        var (quarantinedItems, failures, processedRows, accessDeniedWindowsUpdatePaths) =
+            await Task.Run(() => ProcessSelected(selected));
 
         foreach (var row in processedRows)
         {
@@ -144,14 +146,80 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             var report = CleanupReportBuilder.FromQuarantinedItems(quarantinedItems);
             new CleanupReportWindow(report) { Owner = System.Windows.Application.Current.MainWindow }.ShowDialog();
         }
+
+        if (accessDeniedWindowsUpdatePaths.Count > 0)
+        {
+            await OfferElevatedRetry(accessDeniedWindowsUpdatePaths);
+        }
     }
 
-    private (List<QuarantineItem> QuarantinedItems, int Failures, List<JunkResultRowViewModel> ProcessedRows) ProcessSelected(
-        List<JunkResultRowViewModel> selected)
+    /// <summary>
+    /// Windows Update leftovers (Windows.old, SoftwareDistribution\Download) need
+    /// administrator rights a standard-user process doesn't have. Offers a UAC
+    /// elevation retry (requirements.txt 2) rather than silently leaving them.
+    /// </summary>
+    private async Task OfferElevatedRetry(IReadOnlyList<string> failedPaths)
+    {
+        var retry = MessageBox.Show(
+            $"{failedPaths.Count} Windows Update item(s) couldn't be removed without administrator rights.\n\n"
+            + "Retry as Administrator? Windows will show a permission prompt.",
+            "Administrator Rights Needed",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (retry != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusText = "Waiting for administrator permission...";
+
+        var elevatedItems = new List<QuarantineItem>();
+        foreach (var path in failedPaths)
+        {
+            // Blocks on the UAC prompt + elevated process, but off the UI thread.
+            var moved = await Task.Run(() => ElevatedMoveHelper.RetryFolderElevated(path));
+            if (moved.Count == 0)
+            {
+                continue;
+            }
+
+            var pathItems = moved
+                .Select(m => _quarantine.RecordExternallyMovedItem(
+                    m.OriginalPath, m.QuarantinePath, JunkCategory.WindowsUpdateLeftovers, m.SizeBytes))
+                .ToList();
+            elevatedItems.AddRange(pathItems);
+
+            _history.Add(
+                DateTime.UtcNow, JunkCategory.WindowsUpdateLeftovers,
+                pathItems.Sum(i => i.SizeBytes), pathItems.Count,
+                "Manual cleanup suggestion (elevated retry)");
+        }
+
+        IsBusy = false;
+
+        StatusText = elevatedItems.Count > 0
+            ? $"Administrator retry: quarantined {elevatedItems.Count} more item(s), reclaiming {FileSizeFormatter.Format(elevatedItems.Sum(i => i.SizeBytes))}."
+            : "Administrator retry didn't reclaim anything further.";
+
+        if (elevatedItems.Count > 0)
+        {
+            var report = CleanupReportBuilder.FromQuarantinedItems(elevatedItems);
+            new CleanupReportWindow(report) { Owner = System.Windows.Application.Current.MainWindow }.ShowDialog();
+        }
+    }
+
+    private (
+        List<QuarantineItem> QuarantinedItems,
+        int Failures,
+        List<JunkResultRowViewModel> ProcessedRows,
+        List<string> AccessDeniedWindowsUpdatePaths) ProcessSelected(List<JunkResultRowViewModel> selected)
     {
         var quarantinedItems = new List<QuarantineItem>();
         var failures = 0;
         var processedRows = new List<JunkResultRowViewModel>();
+        var accessDeniedWindowsUpdatePaths = new List<string>();
 
         foreach (var row in selected)
         {
@@ -171,6 +239,12 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
                 }
 
                 failures += folderResult.FailedCount;
+
+                if (folderResult.FailedCount > 0 && row.Category == JunkCategory.WindowsUpdateLeftovers)
+                {
+                    accessDeniedWindowsUpdatePaths.Add(row.Path);
+                }
+
                 processedRows.Add(row);
                 continue;
             }
@@ -192,6 +266,6 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
             }
         }
 
-        return (quarantinedItems, failures, processedRows);
+        return (quarantinedItems, failures, processedRows, accessDeniedWindowsUpdatePaths);
     }
 }

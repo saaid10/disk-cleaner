@@ -42,6 +42,18 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Headless elevated-helper mode (requirements.txt 2): relaunched via UAC by
+        // ElevatedMoveHelper.RetryFolderElevated to move files a standard-user
+        // process can't touch (Windows Update leftovers). No window, no tray icon,
+        // no composition root - just the one file-move operation, then exit.
+        if (e.Args.Length >= 3 && e.Args[0] == ElevatedMoveHelper.ElevatedModeArg)
+        {
+            ElevatedMoveHelper.RunElevatedMoveFolder(e.Args[1], e.Args[2]);
+            Shutdown(0);
+            return;
+        }
+
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         var appDataDir = Path.Combine(
