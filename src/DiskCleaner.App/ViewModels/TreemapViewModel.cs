@@ -8,7 +8,10 @@ namespace DiskCleaner.App.ViewModels;
 
 /// <summary>
 /// Disk Scan / Treemap screen (requirements.txt 3f): visual drive explorer, drill
-/// into folders by clicking, breadcrumb-style "up" navigation.
+/// into folders by clicking, breadcrumb-style "up" navigation. Loading is async -
+/// summing folder sizes recursively (DirectoryUsageService) can take real time
+/// against a full drive root, and blocking the UI thread there froze the whole app
+/// during navigation (caught by the final verification pass).
 /// </summary>
 public sealed partial class TreemapViewModel : ObservableObject
 {
@@ -22,7 +25,7 @@ public sealed partial class TreemapViewModel : ObservableObject
         _usage = usage;
         var firstDrive = driveSpace.GetDrives().FirstOrDefault();
         _currentPath = firstDrive?.Name ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        LoadCurrentPath();
+        _ = LoadCurrentPathAsync();
     }
 
     public ObservableCollection<TreemapRectViewModel> Rects { get; } = new();
@@ -30,40 +33,56 @@ public sealed partial class TreemapViewModel : ObservableObject
     [ObservableProperty]
     private string _currentPath;
 
-    [RelayCommand]
-    private void Refresh() => LoadCurrentPath();
+    [ObservableProperty]
+    private bool _isLoading;
 
     [RelayCommand]
-    private void NavigateUp()
+    private Task Refresh() => LoadCurrentPathAsync();
+
+    [RelayCommand]
+    private Task NavigateUp()
     {
         var parent = Directory.GetParent(CurrentPath.TrimEnd('\\', '/'));
-        if (parent is not null)
+        if (parent is null)
         {
-            CurrentPath = parent.FullName;
-            LoadCurrentPath();
+            return Task.CompletedTask;
         }
+
+        CurrentPath = parent.FullName;
+        return LoadCurrentPathAsync();
     }
 
     [RelayCommand]
-    private void NavigateInto(TreemapRectViewModel? rect)
+    private Task NavigateInto(TreemapRectViewModel? rect)
     {
         if (rect is null || !rect.IsFolder)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         CurrentPath = Path.Combine(CurrentPath, rect.Label);
-        LoadCurrentPath();
+        return LoadCurrentPathAsync();
     }
 
-    private void LoadCurrentPath()
+    private async Task LoadCurrentPathAsync()
     {
-        Rects.Clear();
-        var nodes = _usage.GetChildNodes(CurrentPath);
+        IsLoading = true;
+        var requestedPath = CurrentPath;
+
+        var nodes = await Task.Run(() => _usage.GetChildNodes(requestedPath));
+
+        if (requestedPath != CurrentPath)
+        {
+            return; // user navigated elsewhere while this load was in flight - discard stale result
+        }
+
         var layout = TreemapLayoutEngine.Layout(nodes, LayoutWidth, LayoutHeight);
+        Rects.Clear();
         foreach (var rect in layout)
         {
             Rects.Add(new TreemapRectViewModel(rect));
         }
+
+        IsLoading = false;
     }
 }

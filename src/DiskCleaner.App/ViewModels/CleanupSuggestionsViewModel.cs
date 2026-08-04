@@ -31,13 +31,12 @@ public sealed partial class CleanupSuggestionsViewModel : ObservableObject
         _quarantine = quarantine;
         _settings = settings;
         _history = history;
-        Scan();
     }
 
     public ObservableCollection<JunkResultRowViewModel> Results { get; } = new();
 
     [ObservableProperty]
-    private string _statusText = string.Empty;
+    private string _statusText = "Click \"Scan\" to check for junk (browser cache, Windows temp, Windows Update leftovers, and - if scan roots are configured - dev-build folders and old logs).";
 
     [RelayCommand]
     private void Scan()

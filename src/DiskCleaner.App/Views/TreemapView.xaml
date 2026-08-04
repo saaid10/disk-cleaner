@@ -21,7 +21,8 @@
             <TextBlock Text="{Binding CurrentPath}" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
-        <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1">
+        <Grid Grid.Row="2">
+        <Border BorderBrush="#CCCCCC" BorderThickness="1">
             <ItemsControl ItemsSource="{Binding Rects}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -50,5 +51,9 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </Border>
+        <TextBlock Text="Loading..." FontSize="14" Foreground="#666666"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        </Grid>
     </Grid>
 </UserControl>

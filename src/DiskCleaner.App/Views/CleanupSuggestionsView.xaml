@@ -12,7 +12,7 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
-            <Button DockPanel.Dock="Right" Content="Rescan" Padding="12,4" Command="{Binding ScanCommand}"/>
+            <Button DockPanel.Dock="Right" Content="Scan" Padding="12,4" Command="{Binding ScanCommand}"/>
             <TextBlock Text="Cleanup Suggestions" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
         </DockPanel>
 

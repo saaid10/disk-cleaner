@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:DiskCleaner.App"
              xmlns:conv="clr-namespace:DiskCleaner.App.Converters">
     <Application.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:FractionToStarConverter x:Key="FractionToStarConverter"/>
         <conv:BoolToQuarantineLabelConverter x:Key="BoolToQuarantineLabelConverter"/>
         <conv:InverseBoolConverter x:Key="InverseBoolConverter"/>
