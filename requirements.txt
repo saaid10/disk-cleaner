@@ -188,13 +188,31 @@ without ever risking files the user actually cares about.
       systems - still the closest available without a separate usage
       tracker.
     - Visual disk map: treemap-style view of drive/folder structure,
-      click a folder rectangle to drill in, "Up" to go back. Built as a
-      custom lightweight WPF control - a simple proportional slice
-      layout (sliced along the longer axis, largest node first), not a
-      full squarified treemap. Loads asynchronously (Task.Run) with a
-      "Loading..." indicator, since summing a whole drive root's folder
-      sizes can take real time - an earlier synchronous version froze the
-      UI on navigation and was caught and fixed during final verification.
+      click a folder rectangle to drill in, "Up" to go back. Loads
+      asynchronously with progressive streaming updates - items appear as
+      soon as their size is known rather than an all-or-nothing wait (a
+      drive root can show most items within a second even while the
+      largest folder is still being sized).
+    - Fixed (user-reported): a real C:\ root both loaded very slowly and
+      rendered as mostly-unreadable slivers past the first few items.
+      Two separate root causes, both fixed:
+        * Layout: replaced the original simple single-axis slice layout
+          with the standard squarified treemap algorithm (Bruls/Huizing/
+          van Wijk) - groups items into rows/columns keeping each
+          rectangle's aspect ratio near 1:1 instead of slicing everything
+          along one axis, so dozens of children stay legible. Regression-
+          tested with 25 equal-sized items asserting no rectangle exceeds
+          a 6:1 aspect ratio.
+        * Performance: sizing every subfolder's full recursive tree now
+          runs as one flat parallel operation across every leaf directory
+          of every subfolder combined, rather than nesting parallel
+          operations (subfolder-level parallelism alone doesn't help when
+          one huge folder like C:\Windows dominates on its own; nesting a
+          second parallel layer inside that didn't help either - two
+          nested parallel operations compete for the same finite core
+          count without actually finishing faster). A user-configurable
+          minimum-size filter (Settings, default 5MB) also buckets tiny
+          items into a single "Other (small items)" node.
     - Treemap color-coding reuses the same file-type categories as the
       Desktop Organizer's type buckets (Documents/Images/Archives/
       Installers/Videos/Audio/Other), plus a "Folder" category for
@@ -381,6 +399,10 @@ see the relevant 3x section for detail): UAC elevation prompting,
 Recycle Bin action, removable-drive opt-in UI, before/after report UI,
 Disk Scan/Treemap header drive stats, Dashboard auto-refresh.
 
+Also resolved (user-reported, this round): Disk Scan/Treemap load
+performance against a real large drive root, and the treemap layout
+squeezing most items into unreadable slivers - see 3f.
+
 Still open:
 - Loose-desktop-file-count "nudge" notification (mentioned in early
   Desktop Organizer discussion) was not built (3d).
@@ -391,23 +413,40 @@ Still open:
   path could not be exercised by automated testing (a UAC prompt runs
   on Windows' secure desktop by design) - worth a manual end-to-end
   check the next time Windows Update leftovers actually need it.
+- Disk Scan/Treemap total completion time for a genuinely huge folder
+  (e.g. C:\Windows on a large drive) is still bound by real disk I/O
+  and antivirus real-time-scan overhead per file, which no amount of
+  in-app parallelism fully eliminates - the fix so far makes results
+  appear progressively (usable within ~1s) rather than making the
+  single biggest folder finish instantly. Not re-verified with a fresh
+  timing number after the final flat-parallel rewrite (the app window
+  was minimized/in use during that verification pass) - worth spot-
+  checking against C:\ again.
 
 6. STATUS
 ----------
-V1 is built, unit-tested (121 Core tests passing), and verified by
+V1 is built, unit-tested (130 Core tests passing), and verified by
 actually running the app end-to-end multiple times. Beyond the original
 9-screen build, a follow-up round added Downloads scanning, checkbox
 multi-select cleanup, and fixed a real user-reported bug (Windows Temp
 quarantine failing entirely over one locked file); a further round closed
 out most of the "known gaps" list - UAC elevation retry, Recycle Bin
 action, removable-drive opt-in, before/after report UI, Treemap header
-drive stats, and auto-refresh are all now implemented. Two real UI-freeze
-bugs were found and fixed along the way (Cleanup Suggestions/Treemap
-scanning synchronously on the UI thread; later, bulk quarantine doing the
-same). All work is committed and pushed to the GitHub repository listed
-at the top of this document. Remaining work is the short list in
-section 5 - a nudge notification and custom organizer rules, both minor -
-plus a manual end-to-end check of the UAC elevation prompt.
+drive stats, and auto-refresh are all now implemented; a fourth round
+fixed two more user-reported Disk Scan problems (slow load against a
+real large drive, unreadable sliver layout) with a proper squarified
+treemap algorithm and a flat (non-nested) parallel size computation.
+Several real bugs were found and fixed along the way, all through live
+testing against the user's actual drives rather than synthetic data
+alone: two UI-freeze bugs (Cleanup Suggestions/Treemap scanning
+synchronously on the UI thread; later, bulk quarantine doing the same),
+the Windows Temp whole-folder-move failure, and the treemap performance/
+layout issues. All work is committed and pushed to the GitHub repository
+listed at the top of this document. Remaining work is the short list in
+section 5 - a nudge notification and custom organizer rules (both minor),
+a manual end-to-end check of the UAC elevation prompt, and a fresh
+Disk Scan timing spot-check against C:\ after the latest performance
+rewrite.
 
 7. CHANGE LOG
 --------------
@@ -511,3 +550,17 @@ plus a manual end-to-end check of the UAC elevation prompt.
   via UI Automation across all 9 screens; Recycle Bin card confirmed
   against the real (empty) Recycle Bin without triggering the
   irreversible Empty action.
+- Fixed (user-reported, 3f): Disk Scan against the real C:\ root both
+  loaded very slowly and rendered mostly-unreadable slivers. Replaced
+  the slice-based TreemapLayoutEngine with the standard squarified
+  algorithm (regression-tested: 25 equal items, no rectangle exceeds a
+  6:1 aspect ratio). Went through two performance iterations, each
+  live-timed against the real drive: subfolder-level-only parallelism
+  still took 30+ seconds (one huge folder dominates regardless of
+  siblings); nesting a second parallel layer inside that didn't help
+  either (~39s, likely thread-pool contention). Final design: one flat
+  parallel operation across every leaf directory of the whole tree
+  combined, plus progressive UI streaming (15 of 25 items appeared
+  within 0.5s in testing) and a configurable minimum-size filter that
+  buckets small items into "Other (small items)". 9 new/changed tests
+  (130 total, all passing).
